@@ -3,8 +3,6 @@
   <component name="ChangeListManager">
     <list default="true" id="bfce66e1-ee08-4d75-88c8-27d985b59a7a" name="Default" comment="">
       <change type="MODIFICATION" beforePath="$PROJECT_DIR$/tch-rails-quartz/pom.xml" afterPath="$PROJECT_DIR$/tch-rails-quartz/pom.xml" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/tch-rails-quartz/tch-rails-quartz.iml" afterPath="$PROJECT_DIR$/tch-rails-quartz/tch-rails-quartz.iml" />
-      <change type="MODIFICATION" beforePath="$PROJECT_DIR$/.idea/workspace.xml" afterPath="$PROJECT_DIR$/.idea/workspace.xml" />
     </list>
     <ignored path="tch-rails.iws" />
     <ignored path=".idea/workspace.xml" />
@@ -57,8 +55,8 @@
       <file leaf-file-name="pom.xml" pinned="false" current-in-tab="true">
         <entry file="file://$PROJECT_DIR$/tch-rails-quartz/pom.xml">
           <provider selected="true" editor-type-id="text-editor">
-            <state vertical-scroll-proportion="0.5801105" vertical-offset="0" max-vertical-offset="543">
-              <caret line="21" column="79" selection-start-line="21" selection-start-column="20" selection-end-line="21" selection-end-column="20" />
+            <state vertical-scroll-proportion="0.6077348" vertical-offset="0" max-vertical-offset="543">
+              <caret line="22" column="33" selection-start-line="22" selection-start-column="33" selection-end-line="22" selection-end-column="33" />
               <folding />
             </state>
           </provider>
@@ -405,7 +403,7 @@
   </component>
   <component name="ToolWindowManager">
     <frame x="463" y="37" width="1316" height="979" extended-state="0" />
-    <editor active="false" />
+    <editor active="true" />
     <layout>
       <window_info id="Palette&#9;" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" weight="0.33" sideWeight="0.5" order="-1" side_tool="false" content_ui="tabs" />
       <window_info id="UI Designer" active="false" anchor="left" auto_hide="false" internal_type="DOCKED" type="DOCKED" visible="false" weight="0.33" sideWeight="0.5" order="-1" side_tool="false" content_ui="tabs" />
@@ -502,8 +500,8 @@
     </entry>
     <entry file="file://$PROJECT_DIR$/tch-rails-quartz/pom.xml">
       <provider selected="true" editor-type-id="text-editor">
-        <state vertical-scroll-proportion="0.5801105" vertical-offset="0" max-vertical-offset="543">
-          <caret line="21" column="79" selection-start-line="21" selection-start-column="20" selection-end-line="21" selection-end-column="20" />
+        <state vertical-scroll-proportion="0.6077348" vertical-offset="0" max-vertical-offset="543">
+          <caret line="22" column="33" selection-start-line="22" selection-start-column="33" selection-end-line="22" selection-end-column="33" />
           <folding />
         </state>
       </provider>

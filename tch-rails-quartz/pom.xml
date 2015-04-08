@@ -20,9 +20,9 @@
             <version>${parent.version}</version>
         </dependency>
         <dependency>
-            <groupId>org.opensymphony.quartz</groupId>
-            <artifactId>quartz</artifactId>
-            <version>1.6.3</version>
+        	<groupId>opensymphony</groupId>
+        	<artifactId>quartz</artifactId>
+        	<version>1.6.3</version>
         </dependency>
     </dependencies>
 </project>
