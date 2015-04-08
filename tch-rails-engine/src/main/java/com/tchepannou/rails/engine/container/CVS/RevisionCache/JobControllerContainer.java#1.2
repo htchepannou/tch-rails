@@ -1,0 +1,182 @@
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package com.tchepannou.rails.engine.container;
+
+import com.tchepannou.rails.core.api.ContainerContext;
+import com.tchepannou.rails.core.api.JobController;
+import com.tchepannou.rails.core.exception.InitializationException;
+import java.text.ParseException;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+import org.apache.log4j.Logger;
+import org.quartz.CronTrigger;
+import org.quartz.JobDataMap;
+import org.quartz.JobDetail;
+import org.quartz.Scheduler;
+import org.quartz.SchedulerException;
+import org.quartz.impl.StdSchedulerFactory;
+
+/**
+ * Default implementation of {@link ActionControllerProvider}.
+ *
+ * @author herve
+ */
+public class JobControllerContainer
+{
+    //-- Static Attribute
+    private static final Logger LOG = Logger.getLogger (JobControllerContainer.class);
+    public static final int START_DELAY = 5;
+    
+    
+    //-- Attribute
+    private ContainerContext _containerContext;
+    private List<JobInfo> _jobs = new ArrayList<JobInfo> ();
+    private boolean _initialized;
+    private Scheduler _scheduler;
+    
+    //-- Constructeur
+    public JobControllerContainer ()
+    {
+    }
+
+
+    //-- Public method
+    public void init (ContainerContext containerContext)
+    {
+        if (LOG.isTraceEnabled ())
+        {
+            LOG.trace ("init(" + containerContext + ")");
+        }
+        _containerContext = containerContext;
+
+        try
+        {
+            initScheduler ();
+            initJobs ();
+
+            _initialized = true;
+        }
+        catch (SchedulerException e)
+        {
+            throw new InitializationException ("Unable to initialized Quartz scheduler", e);
+        }
+        catch (ParseException e)
+        {
+            throw new InitializationException ("Invalid cron expression", e);
+        }
+    }
+
+    public void destroy ()
+    {
+        if (LOG.isTraceEnabled ())
+        {
+            LOG.trace ("destroy()");
+        }
+
+        _jobs.clear ();
+
+        try
+        {
+            _scheduler.shutdown ();
+        }
+        catch (SchedulerException e)
+        {
+            LOG.warn ("Unable to stop Quartz scheduler", e);
+        }        
+
+        _initialized = false;
+    }
+
+    public boolean isInitialized ()
+    {
+        return _initialized;
+    }
+
+    public void register (String cronExpression, Class<? extends JobController> controller)
+    {
+        JobInfo job = new JobInfo ();
+        job.setControllerClass (controller);
+        job.setCronExpression (cronExpression);
+
+        _jobs.add (job);
+    }
+
+    public List<JobInfo> getJobs ()
+    {
+        return _jobs;
+    }
+
+    //-- Private methods
+    private void initScheduler ()
+        throws SchedulerException
+    {
+        LOG.info ("Initializing Quartz Scheduler");
+
+        /* Initialize quartz */
+        StdSchedulerFactory factory = new StdSchedulerFactory ();
+        
+        factory.initialize ();
+
+        _scheduler = factory.getScheduler ();
+        _scheduler.start ();
+    }
+
+
+    private void initJobs ()
+        throws SchedulerException, ParseException
+    {
+        Date now = new Date ();
+        for (JobInfo job : _jobs)
+        {
+            String name = job.getControllerClass ().getName ();
+            String cron = job.getCronExpression ();
+            CronTrigger trigger = new CronTrigger (name, name, cron);
+            trigger.setStartTime (now);
+
+            JobDetail xjob = new JobDetail (name, name, JobControllerWrapper.class);
+            JobDataMap map = xjob.getJobDataMap ();
+            map.put (JobControllerWrapper.CONTROLLER_CLASS_KEY, job.getControllerClass ());
+            map.put (JobControllerWrapper.CONTAINER_CONTEXT_KEY, _containerContext);
+
+            if (LOG.isDebugEnabled ())
+            {
+                LOG.debug ("scheduling " + job.getCronExpression () + "/" + job.getControllerClass ().getName ());
+            }
+            _scheduler.scheduleJob (xjob, trigger);
+        }
+    }
+
+
+    //-- Inner classes
+    /**
+     * Job informations
+     */
+    public static class JobInfo
+    {
+        private String _cronExpression;
+        private Class<? extends JobController> _controllerClass;
+
+        public String getCronExpression ()
+        {
+            return _cronExpression;
+        }
+
+        public void setCronExpression (String cronExpression)
+        {
+            this._cronExpression = cronExpression;
+        }
+
+        public Class<? extends JobController> getControllerClass ()
+        {
+            return _controllerClass;
+        }
+
+        public void setControllerClass (Class<? extends JobController> controllerClass)
+        {
+            this._controllerClass = controllerClass;
+        }        
+    }
+}

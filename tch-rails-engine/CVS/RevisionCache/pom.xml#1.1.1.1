@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd" xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <artifactId>tch-rails</artifactId>
+        <groupId>com.tchepannou.rails</groupId>
+        <version>2.0-SNAPSHOT</version>
+    </parent>
+
+    <groupId>com.tchepannou.rails</groupId>
+    <artifactId>tch-rails-engine</artifactId>
+    <name>tch-rails-engine</name>
+
+    <dependencies>
+        <dependency>
+            <groupId>${parent.groupId}</groupId>
+            <artifactId>tch-rails-core</artifactId>
+            <version>${parent.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.opensymphony.quartz</groupId>
+            <artifactId>quartz</artifactId>
+            <version>1.6.5</version>
+        </dependency>
+    </dependencies>
+</project>

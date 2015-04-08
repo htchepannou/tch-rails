@@ -1,0 +1,350 @@
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+package com.tchepannou.rails.engine.container;
+
+import com.tchepannou.rails.core.api.ActionInterceptor;
+import com.tchepannou.rails.core.api.ContainerContext;
+import com.tchepannou.rails.core.api.JobController;
+import com.tchepannou.rails.core.api.JobInterceptor;
+import com.tchepannou.rails.core.api.MailController;
+import com.tchepannou.rails.core.api.MailInterceptor;
+import com.tchepannou.rails.core.api.MessageInterceptor;
+import com.tchepannou.rails.core.api.Service;
+import com.tchepannou.rails.core.api.ServiceContext;
+import com.tchepannou.rails.core.util.EntityManagerThreadLocal;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import javax.mail.MessagingException;
+import javax.persistence.EntityManagerFactory;
+import javax.persistence.Persistence;
+import javax.servlet.ServletContext;
+import org.apache.log4j.Logger;
+
+/**
+ *
+ * @author herve
+ */
+public class Engine
+{
+    //-- Attribute
+    private static final Logger LOG = Logger.getLogger (Engine.class);
+    private static final String ATTR_ENGINE = "com.tchepannou.rails.engine";
+
+    //-- Attributes
+    private ServletContext _servletContext;
+    private EntityManagerFactory _emf;
+    private String _basePackage;
+    private String _loginURL;
+    private String _persistenceUnit;
+    private Map<Class<? extends Service>, Service> _services = new HashMap<Class<? extends Service>, Service>();
+    private List<ActionInterceptor> _actionInterceptors = new ArrayList<ActionInterceptor> ();
+    private List<JobInterceptor> _jobInterceptors = new ArrayList<JobInterceptor> ();
+    private List<MailInterceptor> _mailInterceptors = new ArrayList<MailInterceptor> ();
+    private List<MessageInterceptor> _messageInterceptors = new ArrayList<MessageInterceptor> ();
+    private ActionControllerContainer _actionContainer = new ActionControllerContainer ();
+    private JobControllerContainer _jobContainer = new JobControllerContainer ();
+    private MailControllerContainer _mailContainer = new MailControllerContainer ();
+    private MessageControllerContainer _messageContainer = new MessageControllerContainer ();
+    private boolean _initialized;
+
+    //-- Constructor
+    public Engine ()
+    {
+    }
+
+    
+    //-- Public methods
+    public void init (ServletContext servletContext)
+    {
+        if (LOG.isTraceEnabled ())
+        {
+            LOG.trace ("init(" + servletContext + ")");
+        }
+        LOG.info ("Initializing");
+
+        _servletContext = servletContext;
+
+        /* Initialize the services */
+        LOG.info ("Initializing services");
+        ContainerContext cc = createContainerContext ();
+        for (Service service : _services.values ())
+        {
+            ServiceContext sc = createServiceContext (cc);
+            service.init (sc);
+        }
+
+        /* JPA */
+        if (_persistenceUnit != null)
+        {
+            LOG.info ("Initializing JPA");
+            
+            _emf = Persistence.createEntityManagerFactory (_persistenceUnit);
+            EntityManagerThreadLocal.init (_emf);
+        }
+
+        /* Containers */
+        _actionContainer.init (cc);
+        _jobContainer.init (cc);
+        _mailContainer.init (cc);
+        _messageContainer.init (cc);
+
+        _servletContext.setAttribute (ATTR_ENGINE, this);
+        
+        _initialized = true;
+        LOG.info ("Initialized");
+    }
+
+    public void destroy ()
+    {
+        if (LOG.isTraceEnabled ())
+        {
+            LOG.trace ("destroy ()");
+        }
+        LOG.info ("Destroying");
+
+        for (Service service : _services.values ())
+        {
+            service.destroy ();
+        }
+
+        _actionContainer.destroy ();
+        _jobContainer.destroy ();
+        _mailContainer.destroy ();
+        _messageContainer.destroy ();
+
+        _services.clear ();
+        _actionInterceptors.clear ();
+        _jobInterceptors.clear ();
+        _mailInterceptors.clear ();
+        getMessageInterceptors ().clear ();
+
+        _servletContext.removeAttribute (ATTR_ENGINE);
+        
+        _initialized = false;
+
+        LOG.info ("Destroyed");
+    }
+
+    public static Engine getInstance (ServletContext sc)
+    {
+        return (Engine)sc.getAttribute (ATTR_ENGINE);
+    }
+
+    public void register(Class<? extends Service> type, Service service)
+    {
+        _services.put (type, service);
+    }
+
+    public void register (ActionInterceptor interceptor)
+    {
+        _actionInterceptors.add (interceptor);
+    }
+
+    public void register (JobInterceptor interceptor)
+    {
+        _jobInterceptors.add (interceptor);
+    }
+
+    public void register (MailInterceptor interceptor)
+    {
+        _mailInterceptors.add (interceptor);
+    }
+
+    public void register (MessageInterceptor interceptor)
+    {
+        getMessageInterceptors ().add (interceptor);
+    }
+
+    /**
+     * Schedule a job
+     *
+     * @param cronexp CRON expression of the job trigger
+     * @param startDate When to start the job
+     * @param clazz Job class
+     *
+     * @throws ParseException if the cron expression is invalid
+     */
+    public void register (String cronexp, Class<? extends JobController> clazz)
+    {
+        if ( LOG.isTraceEnabled () )
+        {
+            LOG.trace ("schedule(" + cronexp + "," + clazz + ")");
+        }
+
+    }
+
+    public ContainerContext createContainerContext ()
+    {
+        return new ContainerContextImpl ();
+    }
+
+    //-- Private
+    private ServiceContext createServiceContext (final ContainerContext containerContext)
+    {
+        return new ServiceContext () {
+
+            public ContainerContext getContainerContext ()
+            {
+                return containerContext;
+            }
+        };
+    }
+
+
+    //-- Getter/Setter
+    public boolean isInitalized ()
+    {
+        return _initialized;
+    }
+    
+    public ServletContext getServletContext ()
+    {
+        return _servletContext;
+    }
+
+    public EntityManagerFactory getEntityManagerFactory ()
+    {
+        return _emf;
+    }
+
+    public List<ActionInterceptor> getActionInterceptors ()
+    {
+        return _actionInterceptors;
+    }
+
+    public Service findService (Class<? extends Service> type)
+    {
+        return _services.get (type);
+    }
+
+    public String getBasePackage ()
+    {
+        return _basePackage;
+    }
+
+    public String getLoginURL ()
+    {
+        return _loginURL;
+    }
+
+    public void setLoginURL (String loginURL)
+    {
+        _loginURL = loginURL;
+    }
+
+    public void setBasePackage (String basePackage)
+    {
+        _basePackage = basePackage;
+    }
+
+    public String getPersistenceUnit ()
+    {
+        return _persistenceUnit;
+    }
+
+    public void setPersistenceUnit (String persistenceUnit)
+    {
+        this._persistenceUnit = persistenceUnit;
+    }
+
+    public ActionControllerContainer getActionContainer ()
+    {
+        return _actionContainer;
+    }
+
+    public List<JobInterceptor> getJobInterceptors ()
+    {
+        return _jobInterceptors;
+    }
+
+    public List<MailInterceptor> getMailInterceptors ()
+    {
+        return _mailInterceptors;
+    }
+    
+    public JobControllerContainer getJobContainer ()
+    {
+        return _jobContainer;
+    }
+
+    public MailControllerContainer getMailContainer ()
+    {
+        return _mailContainer;
+    }
+
+    public MessageControllerContainer getMessageContainer ()
+    {
+        return _messageContainer;
+    }
+
+    public List<MessageInterceptor> getMessageInterceptors ()
+    {
+        return _messageInterceptors;
+    }
+
+
+    //-- Inner classes
+    /**
+     * Implementation of {@link ContainerContext}
+     */
+    private class ContainerContextImpl
+        implements ContainerContext
+    {
+        public ServletContext getServletContext ()
+        {
+            return _servletContext;
+        }
+
+        public EntityManagerFactory getEntityManagerFactory ()
+        {
+            return _emf;
+        }
+
+        public List<ActionInterceptor> getActionInterceptors ()
+        {
+            return _actionInterceptors;
+        }
+
+        public List<MailInterceptor> getMailInterceptors ()
+        {
+            return _mailInterceptors;
+        }
+
+        public List<MessageInterceptor> getMessageInterceptors ()
+        {
+            return _messageInterceptors;
+        }
+
+        public Service findService (Class<? extends Service> type)
+        {
+            return _services.get (type);
+        }
+
+        public String getBasePackage ()
+        {
+            return _basePackage;
+        }
+
+        public String getLoginURL ()
+        {
+            return _loginURL;
+        }
+
+        public List<JobInterceptor> getJobInterceptors ()
+        {
+            return _jobInterceptors;
+        }
+
+        public void deliver (String template, Map data, MailController mailer)
+            throws IOException, MessagingException
+        {
+            _mailContainer.deliver (template, data, mailer);
+        }
+    }
+}

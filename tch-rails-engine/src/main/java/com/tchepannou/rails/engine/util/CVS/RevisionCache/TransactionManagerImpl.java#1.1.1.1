@@ -1,0 +1,42 @@
+package com.tchepannou.rails.engine.util;
+
+import com.tchepannou.rails.core.util.EntityManagerThreadLocal;
+import javax.persistence.EntityManager;
+import javax.persistence.EntityTransaction;
+
+/**
+ * Default implementation of {@link InterceptorTransactionManager}
+ */
+public class TransactionManagerImpl
+    implements TransactionManager
+{
+    //-- Static Attribute
+    private static final ThreadLocal<EntityTransaction> TX = new ThreadLocal<EntityTransaction> ();
+
+    //-- InterceptorTransactionManager override
+    public void begin ()
+    {
+        EntityManager em = EntityManagerThreadLocal.getEntityManager ();
+        EntityTransaction tx = em.getTransaction ();
+        tx.begin ();
+        TX.set (tx);
+    }
+
+    public void commit ()
+    {
+        EntityTransaction tx = TX.get ();
+        if ( tx != null && tx.isActive () )
+        {
+            tx.commit ();
+        }
+    }
+
+    public void rollback ()
+    {
+        EntityTransaction tx = TX.get ();
+        if ( tx != null && tx.isActive () )
+        {
+            tx.rollback ();
+        }
+    }
+}

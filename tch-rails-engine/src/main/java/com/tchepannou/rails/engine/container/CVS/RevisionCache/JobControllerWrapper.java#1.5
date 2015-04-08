@@ -1,0 +1,145 @@
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package com.tchepannou.rails.engine.container;
+
+import com.tchepannou.rails.core.api.ContainerContext;
+import com.tchepannou.rails.core.api.JobController;
+import com.tchepannou.rails.core.api.JobInterceptor;
+import com.tchepannou.rails.core.api.JobService;
+import java.util.List;
+import org.apache.log4j.Logger;
+
+/**
+ *
+ * @author herve
+ */
+public class JobControllerWrapper
+    implements JobService.Executor
+{
+    //-- Static attribute
+    private static final Logger LOG = Logger.getLogger (JobControllerWrapper.class);
+//    public static final String CONTAINER_CONTEXT_KEY = "container_context";
+//    public static final String CONTROLLER_CLASS_KEY = "controller_class_key";
+
+    //-- Attribute
+    private boolean _rollback;
+    
+    //-- Public method
+    @Override
+    public void execute (JobController controller)
+    {
+        if (LOG.isTraceEnabled ())
+        {
+            LOG.trace("execute(" + controller + ")");
+        }
+        
+        /* Pre-interceptor */
+        int status = JobInterceptor.CONTINUE;
+        ContainerContext containerContext = controller.getJobContext ().getContainerContext ();
+        List<JobInterceptor> interceptors = containerContext.getJobInterceptors ();
+        int size=interceptors.size ();
+        for (int i=0 ; i<size ; i++)
+        {
+            JobInterceptor itc = interceptors.get (i);
+            status = itc.before (controller);
+            if (status != JobInterceptor.CONTINUE)
+            {
+                break;
+            }
+        }
+
+        /* Service */
+        Throwable cause = null;
+        try
+        {
+            if (status != JobInterceptor.STOP)
+            {
+                controller.execute ();
+            }
+        }
+        finally
+        {
+            /* Post-interceptor */
+            for (int i=size-1 ; i>=0 ; i--)
+            {
+                JobInterceptor itc = interceptors.get (i);
+                itc.after (controller, cause);
+            }
+        }
+    }
+    
+//    public void execute (JobExecutionContext jec)
+//        throws JobExecutionException
+//    {
+//        if (LOG.isTraceEnabled ())
+//        {
+//            LOG.trace ("execute (" + jec + ")");
+//        }
+//
+//        JobController controller = createJobController (jec);
+//        try
+//        {
+//            execute (controller);
+//        }
+//        catch (IOException e)
+//        {
+//            throw new JobExecutionException (e);
+//        }
+//    }
+//
+
+    //-- Object overrides
+    @Override
+    public String toString ()
+    {
+        return "JobControllerWrapper{}";
+    }
+
+
+
+//    //-- Private methods
+//    private JobController createJobController (JobExecutionContext jec)
+//    {
+//        JobDataMap jdm = jec.getJobDetail ().getJobDataMap ();
+//        Class<? extends JobController> clazz = (Class<? extends JobController>)jdm.get (CONTROLLER_CLASS_KEY);
+//        try
+//        {
+//            JobController controller = clazz.newInstance ();
+//            JobContext context = createJobContext (jec);
+//            controller.setJobContext (context);
+//            return controller;
+//        }
+//        catch ( InstantiationException ex )
+//        {
+//            throw new com.tchepannou.rails.core.exception.InstantiationException ("Unable to instantiate " + clazz, ex);
+//        }
+//        catch ( IllegalAccessException ex )
+//        {
+//            throw new com.tchepannou.rails.core.exception.InstantiationException ("Unable to instantiate " + clazz, ex);
+//        }
+//    }
+//
+//    private JobContext createJobContext (final JobExecutionContext jec)
+//    {
+//        return new JobContext () {
+//
+//            public ContainerContext getContainerContext ()
+//            {
+//                JobDataMap jdm = jec.getJobDetail ().getJobDataMap ();
+//                return (ContainerContext)jdm.get (CONTAINER_CONTEXT_KEY);
+//            }
+//
+//            public boolean isRollback ()
+//            {
+//                return _rollback;
+//            }
+//
+//            public void setRollback (boolean rollback)
+//            {
+//                _rollback  = rollback;
+//            }
+//        };
+//    }
+}

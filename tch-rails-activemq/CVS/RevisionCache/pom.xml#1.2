@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd" xmlns="http://maven.apache.org/POM/4.0.0"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <artifactId>tch-rails</artifactId>
+        <groupId>com.tchepannou.rails</groupId>
+        <version>2.5</version>
+    </parent>
+
+    <groupId>com.tchepannou.rails</groupId>
+    <artifactId>tch-rails-activemq</artifactId>
+    <name>tch-rails-activemq</name>
+    <description>RAILS ActiveMQ Plugin</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.tchepannou.rails</groupId>
+            <artifactId>tch-rails-core</artifactId>
+            <version>${parent.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.activemq</groupId>
+            <artifactId>activemq-core</artifactId>
+            <version>${activemq.version}</version>
+        </dependency>
+    </dependencies>
+</project>

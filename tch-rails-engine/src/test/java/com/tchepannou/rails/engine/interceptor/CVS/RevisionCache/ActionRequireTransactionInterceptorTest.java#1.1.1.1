@@ -1,0 +1,230 @@
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+package com.tchepannou.rails.engine.interceptor;
+
+import com.tchepannou.rails.ContainerContextImpl;
+import com.tchepannou.rails.engine.container.ActionControllerWrapper;
+import com.tchepannou.rails.core.annotation.RequireTransaction;
+import com.tchepannou.rails.core.api.ActionController;
+import com.tchepannou.rails.core.api.ContainerContext;
+import com.tchepannou.rails.core.exception.MethodInvocationException;
+import com.tchepannou.rails.engine.util.TransactionManager;
+import junit.framework.TestCase;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.mock.web.MockServletContext;
+
+/**
+ *
+ * @author herve
+ */
+public class ActionRequireTransactionInterceptorTest
+    extends TestCase
+    implements TransactionManager
+{
+    //-- Attributes
+    private ActionControllerWrapper _wrapper;
+    private MockServletContext _sc;
+    private MockHttpServletRequest _request;
+    private MockHttpServletResponse _response;
+    private boolean _begin;
+    private boolean _commit;
+    private boolean _rollback;
+
+    //-- Constructor
+    public ActionRequireTransactionInterceptorTest (String name)
+    {
+        super (name);
+    }
+
+
+
+    //-- TestCase override
+    @Override
+    protected void setUp ()
+        throws Exception
+    {
+        _wrapper = new ActionControllerWrapper ();
+        _wrapper.init (createContainerContext ());
+
+        _sc = new MockServletContext ();
+        _request = new MockHttpServletRequest (_sc);
+        _response = new MockHttpServletResponse ();
+
+        _begin = false;
+        _commit = false;
+        _rollback = false;
+    }
+
+    @Override
+    protected void tearDown ()
+        throws Exception
+    {
+        super.tearDown ();
+
+        _wrapper.destroy ();
+    }
+
+
+    //-- Test
+    public void testTransactionClass ()
+        throws Exception
+    {
+        /* hello */
+        _wrapper.setControllerClass (TransactionClassActionController.class);
+        _wrapper.service ("/controller/hello", _request, _response);
+
+        /* result */
+        assertTrue ("begin", _begin);
+        assertTrue ("commit", _commit);
+        assertFalse ("rollback", _rollback);
+    }
+
+    public void testTransactionMethod ()
+        throws Exception
+    {
+        /* hello */
+        _wrapper.setControllerClass (TransactionMethodActionController.class);
+        _wrapper.service ("/controller/hello", _request, _response);
+
+        /* result */
+        assertTrue ("begin", _begin);
+        assertTrue ("commit", _commit);
+        assertFalse ("rollback", _rollback);
+    }
+
+    public void testNoTransaction ()
+        throws Exception
+    {
+        /* hello */
+        _wrapper.setControllerClass (NoTransactionActionController.class);
+        _wrapper.service ("/controller/hello", _request, _response);
+
+        /* result */
+        assertFalse ("begin", _begin);
+        assertFalse ("commit", _commit);
+        assertFalse ("rollback", _rollback);
+    }
+
+    public void testSetRollback ()
+        throws Exception
+    {
+        /* hello */
+        _wrapper.setControllerClass (SetRollbackActionController.class);
+        _wrapper.service ("/controller/hello", _request, _response);
+
+        /* result */
+        assertTrue ("begin", _begin);
+        assertFalse ("commit", _commit);
+        assertTrue ("rollback", _rollback);
+    }
+
+    public void testThrowException ()
+        throws Exception
+    {
+        /* hello */
+        _wrapper.setControllerClass (ThrowExceptionActionController.class);
+        try
+        {
+            _wrapper.service ("/controller/hello", _request, _response);
+            fail();
+        }
+        catch (MethodInvocationException e)
+        {
+            /* result */
+            assertTrue ("begin", _begin);
+            assertFalse ("commit", _commit);
+            assertTrue ("rollback", _rollback);
+        }
+    }
+
+
+
+
+    //-- private
+    private ContainerContext createContainerContext ()
+    {
+        ActionRequireTransactionInterceptor itc = new ActionRequireTransactionInterceptor ();
+        itc.setTransactionManager (this);
+        
+        ContainerContextImpl cc = new ContainerContextImpl ();
+        cc.registerActionInterceptor (new ExceptionInterceptor ());
+        cc.registerActionInterceptor (itc);
+
+        return cc;
+    }
+
+
+    //-- ActionRequireTransactionInterceptor.TransactionManager
+    public void begin ()
+    {
+        _begin = true;
+    }
+
+    public void commit ()
+    {
+        _commit = _begin;
+    }
+
+    public void rollback ()
+    {
+        _rollback = _begin;
+    }
+
+
+    //-- InnerClass
+    @RequireTransaction
+    public static class TransactionClassActionController
+        extends ActionController
+    {
+        public void hello()
+        {
+            renderText ("hello");
+        }
+    }
+
+    public static class TransactionMethodActionController
+        extends ActionController
+    {
+        @RequireTransaction
+        public void hello()
+        {
+            renderText ("hello");
+        }
+    }
+
+    public static class NoTransactionActionController
+        extends ActionController
+    {
+        public void hello()
+        {
+            renderText ("hello");
+        }
+    }
+
+    public static class SetRollbackActionController
+        extends ActionController
+    {
+        @RequireTransaction
+        public void hello()
+        {
+            renderText ("hello");
+            getActionContext ().setRollback (true);
+        }
+    }
+
+    public static class ThrowExceptionActionController
+        extends ActionController
+    {
+        @RequireTransaction
+        public void hello()
+            throws Exception
+        {
+            renderText ("hello");
+            throw new Exception ("fail");
+        }
+    }
+}

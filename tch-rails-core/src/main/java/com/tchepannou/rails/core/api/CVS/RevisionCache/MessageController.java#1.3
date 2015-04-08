@@ -1,0 +1,62 @@
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+package com.tchepannou.rails.core.api;
+
+import com.tchepannou.rails.core.util.EntityManagerThreadLocal;
+import java.io.IOException;
+import java.util.Map;
+import javax.mail.MessagingException;
+import javax.persistence.EntityManager;
+
+/**
+ *
+ * @author herve
+ */
+public class MessageController
+{
+    //-- Attributes
+    private MessageContext _context;
+
+
+    //-- Public methods
+    public void setMessageContext (MessageContext context)
+    {
+        _context =  context;
+    }
+
+    public MessageContext getMessageContext ()
+    {
+        return _context;
+    }
+
+    //-- MessageListener overrides
+    public void onMessage (Object msg)
+    {
+    }
+
+
+    //-- Protected methods
+    /**
+     * Deliver an email
+     *
+     * @param template Name of the email template. The email is located at <code>/mail/<i>mailer.name()</i>/<i>template</i></code>
+     * @param data  Data to apply to the template
+     * @param mailer Email controller
+     *
+     * @throws IOException if any error while loading the email template
+     * @throws MessagingException if any error while sending the email
+     */
+    protected void deliver (String template, Map data, MailController mailer)
+        throws IOException, MessagingException
+    {
+        getMessageContext ().getContainerContext ().deliver (template, data, mailer);
+    }
+
+    protected EntityManager getEntityManager ()
+    {
+        return EntityManagerThreadLocal.getEntityManager ();
+    }
+}

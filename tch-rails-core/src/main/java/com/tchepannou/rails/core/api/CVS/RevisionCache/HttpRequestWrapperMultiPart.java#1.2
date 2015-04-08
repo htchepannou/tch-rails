@@ -1,0 +1,110 @@
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+package com.tchepannou.rails.core.api;
+
+import com.tchepannou.util.StringUtil;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import javax.servlet.http.HttpServletRequest;
+import org.apache.commons.fileupload.FileItem;
+import org.apache.commons.fileupload.FileUploadException;
+import org.apache.commons.fileupload.disk.DiskFileItemFactory;
+import org.apache.commons.fileupload.servlet.ServletFileUpload;
+import org.apache.log4j.Logger;
+
+/**
+ * Default implementation of P{@link HttpRequestWrapper}
+ * 
+ * @author herve
+ */
+class HttpRequestWrapperMultiPart
+    implements HttpRequestWrapper
+{
+    //-- Static Attribute
+    private static final Logger LOG = Logger.getLogger (HttpRequestWrapperMultiPart.class);
+
+
+    //-- Attribute
+    private Map<String, Object> _parameters = new HashMap<String, Object> ();
+    private List<FileItem> _files = new ArrayList<FileItem> ();
+
+
+    //-- HttpRequestWrapper override
+    public void init (ActionController controller)
+    {
+        HttpServletRequest request = controller.getRequest ();
+        OptionService os = (OptionService)controller.getActionContext ().getContainerContext ().findService (OptionService.class);
+        try
+        {
+            loadMultiPartData (request, os);
+        }
+        catch (FileUploadException e)
+        {
+            LOG.error ("Upload error", e);
+            throw new IllegalStateException ("Upload error", e);
+        }
+    }
+
+    public Map<String, Object> getParameters ()
+    {
+        return _parameters;
+    }
+
+    public List<FileItem> getFiles ()
+    {
+        return _files;
+    }
+
+
+    //-- Private
+    private void loadMultiPartData (HttpServletRequest request, OptionService os)
+        throws FileUploadException
+    {
+        DiskFileItemFactory factory = new DiskFileItemFactory ();
+        ServletFileUpload upload = new ServletFileUpload (factory);
+        long fileSizeMax = 1024L * 1024L * getFileSizeMax (os);
+        upload.setFileSizeMax (fileSizeMax);
+        List /* FileItem */ items = upload.parseRequest(request);
+
+        /* load parameters and files */
+        for (Iterator it = items.iterator(); it.hasNext();)
+        {
+            FileItem item = (FileItem) it.next();
+            String name = item.getFieldName ();
+            if (item.isFormField())
+            {
+                String value = item.getString ();
+                List<String> values = (List<String>)_parameters.get (name);
+                if (values == null)
+                {
+                    values = new ArrayList<String> ();
+                    _parameters.put (name, values);
+                }
+                values.add (value);
+            }
+            else
+            {
+                _files.add (item);
+            }
+        }
+
+        /* convert values to string arrays */
+        for (String name : _parameters.keySet ())
+        {
+            List<String> values = ((List<String>)_parameters.get (name));
+            _parameters.put (name, values.toArray (new String[] {}));
+        }
+    }
+
+    private long getFileSizeMax (OptionService os)
+    {
+        String value = os.get (OptionService.OPTION_ASSET_UPLOAD_MAX_SIZE, null);
+        return StringUtil.toLong (value, OptionService.DEFAULT_ASSET_UPLOAD_MAX_SIZE);
+    }
+}

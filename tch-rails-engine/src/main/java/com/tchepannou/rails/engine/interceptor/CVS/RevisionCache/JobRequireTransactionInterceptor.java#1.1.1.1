@@ -1,0 +1,95 @@
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+package com.tchepannou.rails.engine.interceptor;
+
+import com.tchepannou.rails.core.annotation.RequireTransaction;
+import com.tchepannou.rails.core.api.ActionInterceptor;
+import com.tchepannou.rails.core.api.JobContext;
+import com.tchepannou.rails.core.api.JobController;
+import com.tchepannou.rails.engine.util.TransactionManager;
+import com.tchepannou.rails.engine.util.TransactionManagerImpl;
+import org.apache.log4j.Logger;
+
+/**
+ * This is the interceptor that start/commit/rollback transaction.
+ * The interceptor will trigger the transaction if the JobController or the
+ * action method has the annotation {@link RequireTransaction}
+ * 
+ * @author herve
+ */
+public class JobRequireTransactionInterceptor
+    extends AbstractJobInterceptor
+{
+    //-- Static Attribute
+    private static final Logger LOG = Logger.getLogger (JobRequireTransactionInterceptor.class);
+
+    //-- Attributes
+    private TransactionManager _txm = new TransactionManagerImpl ();
+
+
+    //-- ActionInterceptor
+    @Override
+    public int before (JobController controller)
+    {
+        begin (controller);
+        return ActionInterceptor.CONTINUE;
+    }
+
+    @Override
+    public void after (JobController controller, Throwable e)
+    {
+        JobContext context = controller.getJobContext ();
+        if (e == null && !context.isRollback ())
+        {
+            commit ();
+        }
+        else
+        {
+            rollback ();
+        }
+    }
+
+
+
+    //-- Protected
+    /**
+     * For testing purpose
+     * @param txm
+     */
+    protected void setTransactionManager (TransactionManager txm)
+    {
+        _txm = txm;
+    }
+
+
+    //-- Private methods
+    private void begin (JobController controller)
+    {
+        if (isTransactionRequired (controller))
+        {
+            if (LOG.isDebugEnabled ())
+            {
+                LOG.debug ("Begining the transaction");
+            }
+            _txm.begin ();
+        }
+    }
+
+    private void commit ()
+    {
+        _txm.commit ();
+    }
+
+    private void rollback ()
+    {
+        _txm.rollback ();
+    }
+
+    private boolean isTransactionRequired (JobController controller)
+    {
+        return controller.getClass ().getAnnotation (RequireTransaction.class) != null;
+    }
+}

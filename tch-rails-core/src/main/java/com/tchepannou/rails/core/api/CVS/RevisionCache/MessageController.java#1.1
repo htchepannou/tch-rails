@@ -1,0 +1,43 @@
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+package com.tchepannou.rails.core.api;
+
+import com.tchepannou.rails.core.util.EntityManagerThreadLocal;
+import javax.persistence.EntityManager;
+
+/**
+ *
+ * @author herve
+ */
+public class MessageController
+{
+    //-- Attributes
+    private MessageContext _context;
+
+
+    //-- Public methods
+    public void setMessagingContext (MessageContext context)
+    {
+        _context =  context;
+    }
+
+    public MessageContext getMessagingContext ()
+    {
+        return _context;
+    }
+
+    //-- MessageListener overrides
+    public void onMessage (Object msg)
+    {
+    }
+
+
+    //-- Protected methods
+    protected EntityManager getEntityManager ()
+    {
+        return EntityManagerThreadLocal.getEntityManager ();
+    }
+}

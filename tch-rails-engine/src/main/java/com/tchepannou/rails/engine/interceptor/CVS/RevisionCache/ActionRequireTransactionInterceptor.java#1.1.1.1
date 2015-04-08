@@ -1,0 +1,99 @@
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+package com.tchepannou.rails.engine.interceptor;
+
+import com.tchepannou.rails.core.annotation.RequireTransaction;
+import com.tchepannou.rails.core.api.ActionContext;
+import com.tchepannou.rails.core.api.ActionController;
+import com.tchepannou.rails.core.api.ActionInterceptor;
+import com.tchepannou.rails.engine.util.TransactionManager;
+import com.tchepannou.rails.engine.util.TransactionManagerImpl;
+import java.lang.reflect.Method;
+import org.apache.log4j.Logger;
+
+/**
+ * This is the interceptor that start/commit/rollback transaction.
+ * The interceptor will trigger the transaction if the ActionController or the
+ * action method has the annotation {@link RequireTransaction}
+ * 
+ * @author herve
+ */
+public class ActionRequireTransactionInterceptor
+    extends AbstractActionInterceptor
+{
+    //-- Static Attribute
+    private static final Logger LOG = Logger.getLogger (ActionRequireTransactionInterceptor.class);
+
+    //-- Attributes
+    private TransactionManager _txm = new TransactionManagerImpl ();
+
+
+    //-- ActionInterceptor
+    @Override
+    public int before (Method method, ActionController controller)
+    {
+        begin (method, controller);
+        return ActionInterceptor.CONTINUE;
+    }
+
+    @Override
+    public void after (Method method, ActionController controller, Throwable e)
+    {
+        ActionContext context = controller.getActionContext ();
+        if (e == null && !context.isRollback ())
+        {
+            commit ();
+        }
+        else
+        {
+            rollback ();
+        }
+    }
+
+
+
+    //-- Protected
+    /**
+     * For testing purpose
+     * @param txm
+     */
+    protected void setTransactionManager (TransactionManager txm)
+    {
+        _txm = txm;
+    }
+
+
+    //-- Private methods
+    private void begin (Method method, ActionController controller)
+    {
+        if (isTransactionRequired (controller, method))
+        {
+            if (LOG.isDebugEnabled ())
+            {
+                LOG.debug ("Begining the transaction");
+            }
+            _txm.begin ();
+        }
+    }
+
+    private void commit ()
+    {
+        _txm.commit ();
+    }
+
+    private void rollback ()
+    {
+        _txm.rollback ();
+    }
+
+    private boolean isTransactionRequired (ActionController controller, Method method)
+    {
+        return method.getAnnotation(RequireTransaction.class) != null
+            ? true
+            : controller.getClass ().getAnnotation (RequireTransaction.class) != null;
+    }
+
+}

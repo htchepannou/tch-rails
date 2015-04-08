@@ -1,0 +1,309 @@
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package com.tchepannou.rails.engine.container;
+
+import com.tchepannou.rails.core.annotation.Action;
+import com.tchepannou.rails.core.api.ActionController;
+import com.tchepannou.rails.core.api.ActiveRecord;
+import com.tchepannou.rails.core.api.ContainerContext;
+import com.tchepannou.rails.core.exception.InitializationException;
+import com.tchepannou.rails.engine.util.ServletUtil;
+import com.tchepannou.util.StringUtil;
+import java.io.File;
+import java.io.IOException;
+import java.lang.reflect.Modifier;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.Enumeration;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import org.apache.log4j.Logger;
+
+/**
+ * Default implementation of {@link ActionControllerProvider}.
+ *
+ * @author herve
+ */
+public class ActionControllerContainer
+{
+    //-- Static Attribute
+    private static final Logger LOG = Logger.getLogger (ActionControllerContainer.class);
+    private static final String CLASS_SUFFIX = "ActionController";
+    private static final String HOME = "home";
+    
+    
+    //-- Attribute
+    private ContainerContext _containerContext;
+    private List<ActionControllerWrapper> _wrappers;
+    private Map<String, ActionControllerWrapper> _wrappersMap;
+    private boolean _initialized;
+    
+    //-- Constructeur
+    public ActionControllerContainer ()
+    {
+    }
+
+
+    //-- Public method
+    public void init (ContainerContext containerContext)
+    {
+        if (LOG.isTraceEnabled ())
+        {
+            LOG.trace ("init(" + containerContext + ")");
+        }
+        _containerContext = containerContext;
+        try
+        {
+            loadActionControllerWrappers (_containerContext.getBasePackage () + ".action");
+            for (ActionControllerWrapper wrapper : _wrappers)
+            {
+                if (LOG.isDebugEnabled ())
+                {
+                    LOG.debug ("Initializing " + wrapper);
+                }
+                wrapper.init (containerContext);
+            }
+
+            _initialized = true;
+        }
+        catch (ClassNotFoundException e)
+        {
+            throw new InitializationException ("Unable to initialized the ActionControllerContainer", e);
+        }
+        catch (IOException e)
+        {
+            throw new InitializationException ("Unable to initialized the ActionControllerContainer", e);
+        }
+    }
+
+    public void destroy ()
+    {
+        if (LOG.isTraceEnabled ())
+        {
+            LOG.trace ("destroy()");
+        }
+
+        for (ActionControllerWrapper wrapper : _wrappers)
+        {
+            if (LOG.isDebugEnabled ())
+            {
+                LOG.debug ("Destroying " + wrapper);
+            }
+            wrapper.destroy ();
+        }
+
+        _containerContext = null;
+        _wrappersMap.clear ();
+        _wrappers.clear ();
+        _initialized = false;
+    }
+
+    public ActionController service (HttpServletRequest request, HttpServletResponse response)
+        throws IOException
+    {
+        if (LOG.isTraceEnabled ())
+        {
+            LOG.trace ("service(" + ServletUtil.toRequestURL (request) + ")");
+        }
+
+        if (!_initialized)
+        {
+            throw new IllegalStateException ("Not initialized. call init() first");
+        }
+
+        /* path */
+        String path = request.getPathInfo ();
+        if ( path.endsWith ("/") )
+        {
+            path = path.substring (0, path.length () - 1);
+        }
+
+        /* get the wrapper */
+        ActionControllerWrapper wrapper = getActionControllerWrapper (path);
+        if (wrapper != null)
+        {
+            /* perform the action */
+            return wrapper.service (path, request, response);
+        }
+        else
+        {
+            LOG.error ("No ActionController mapped to " + path);
+            response.sendError (404, "No ActionController mapped to " + path);
+            return null;
+        }
+    }
+
+    public boolean isInitialized ()
+    {
+        return _initialized;
+    }
+
+
+    //-- Protected 
+    protected ActionControllerWrapper getActionControllerWrapper (String path)
+    {
+        String xpath = path != null ? path.toLowerCase () : "";
+        if (xpath.startsWith ("/static"))
+        {
+            xpath = "/static";  // Ensure that all static match are mapped to the same controller
+        }
+        else if (xpath.startsWith ("/asset"))
+        {
+            xpath = "/asset";   // Ensure that all static match are mapped to the same controller
+        }
+
+        ActionControllerWrapper wrapper = _wrappersMap.get (xpath);
+        if ( wrapper == null )
+        {
+            wrapper = toActionControllerWrapper (xpath);
+            if ( wrapper != null )
+            {
+                _wrappersMap.put (xpath, wrapper);
+            }
+        }
+
+        return wrapper;
+    }
+
+
+    //-- Private
+    private ActionControllerWrapper toActionControllerWrapper (String path)
+    {
+        /* extract the name of the controller */
+        String name = null;
+        if ( StringUtil.isEmpty (path) )
+        {
+            name = HOME;
+        }
+        else
+        {
+            int i = path.lastIndexOf ("/");
+            if ( i == 0 )
+            {
+                name = path.substring (1);
+            }
+            else
+            {
+                String xuri = path.substring (0, i);
+                int j = xuri.lastIndexOf ("/");
+                name = j == 0
+                    ? xuri.substring (1)
+                    : xuri.substring (j + 1);
+            }
+        }
+
+        /* find the appropriate controller */
+        for (ActionControllerWrapper wrapper : _wrappers)
+        {
+            if (name.equalsIgnoreCase (wrapper.getName ()))
+            {
+                return wrapper;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Scans all classes accessible from the context class loader which belong to the given package and subpackages.
+     *
+     * @param packageName The base package
+     * @return The classes
+     * @throws ClassNotFoundException
+     * @throws IOException
+     */
+    private List<Class> loadActionControllerWrappers (String packageName)
+        throws ClassNotFoundException,
+               IOException
+    {
+        _wrappers = new ArrayList<ActionControllerWrapper> ();
+        _wrappersMap = new HashMap<String, ActionControllerWrapper> ();
+        
+        /* Package directory */
+        ClassLoader classLoader = Thread.currentThread ().getContextClassLoader ();
+        assert classLoader != null;
+        String path = packageName.replace ('.', '/');
+        Enumeration<URL> resources = classLoader.getResources (path);
+        List<File> dirs = new ArrayList<File> ();
+        while ( resources.hasMoreElements () )
+        {
+            URL resource = resources.nextElement ();
+            File file = new File (resource.getFile ());
+            if (LOG.isDebugEnabled ())
+            {
+                LOG.debug (" action directory: " + file.getAbsolutePath ());
+            }
+            dirs.add (file);
+        }
+
+        /* Load the classes */
+        ArrayList<Class> classes = new ArrayList<Class> ();
+        for ( File directory: dirs )
+        {
+            classes.addAll (loadClasses (directory, packageName));
+        }
+        return classes;
+    }
+
+    /**
+     * Recursive method used to find all classes in a given directory and subdirs.
+     *
+     * @param directory   The base directory
+     * @param packageName The package name for classes found inside the base directory
+     * @return The classes
+     * @throws ClassNotFoundException
+     */
+    private List<Class> loadClasses (File directory, String packageName)
+        throws ClassNotFoundException
+    {
+        List<Class> classes = new ArrayList<Class> ();
+        if ( !directory.exists () )
+        {
+            return classes;
+        }
+        File[] files = directory.listFiles ();
+        for ( File file: files )
+        {
+            String name = file.getName ();
+            if ( name.endsWith (CLASS_SUFFIX + ".class"))
+            {
+                Class clazz = Class.forName (packageName + '.' + file.getName ().substring (0, file.getName ().length () - 6));
+                int modifier = clazz.getModifiers ();
+                if (Modifier.isPublic (modifier)
+                    && !Modifier.isAbstract (modifier)
+                    && !Modifier.isInterface (modifier)
+                    && ActionController.class.isAssignableFrom (clazz))
+                {
+                    registerActionController (clazz);
+                }
+            }
+        }
+        return classes;
+    }
+
+    private void registerActionController (Class<? extends ActionController> clazz)
+    {
+        ActionControllerWrapper wrapper = new ActionControllerWrapper ();
+        wrapper.setControllerClass (clazz);
+
+        Action action = (Action)clazz.getAnnotation (Action.class);
+        if (action != null)
+        {
+            Class<? extends ActiveRecord> model = action.modelClass ();
+            if (model != Action.ActiveRecordDefault.class)
+            {
+                wrapper.setModelClass (model);
+            }
+        }
+
+        if (LOG.isDebugEnabled ())
+        {
+            LOG.debug ("Registering ActionController: /" + wrapper.getName () + "=" + clazz);
+        }
+        _wrappers.add (wrapper);
+    }
+}

@@ -1,0 +1,19 @@
+package com.tchepannou.rails.sample.job;
+
+import com.tchepannou.rails.core.api.JobController;
+
+/**
+ * 
+ * @author herve
+ */
+public class SampleJobController extends JobController
+{
+    public static long _executed = 0;
+
+    
+    @Override
+    public void execute ()
+    {
+        ++_executed;
+    }
+}

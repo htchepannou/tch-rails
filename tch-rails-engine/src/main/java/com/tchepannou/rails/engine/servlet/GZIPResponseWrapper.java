@@ -1,0 +1,107 @@
+/*
+ * Copyright 2003 Jayson Falkner (jayson@jspinsider.com)
+ * This code is from "Servlets and JavaServer pages; the J2EE Web Tier",
+ * http://www.jspbook.com. You may freely use the code both commercially
+ * and non-commercially. If you like the code, please pick up a copy of
+ * the book and help support the authors, development of more free code,
+ * and the JSP/Servlet/J2EE community.
+ */
+package com.tchepannou.rails.engine.servlet;
+
+import java.io.IOException;
+import java.io.OutputStreamWriter;
+import java.io.PrintWriter;
+import javax.servlet.ServletOutputStream;
+import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpServletResponseWrapper;
+
+/**
+ * Servlet response wrapper that zip response
+ * 
+ * @author herve
+ */
+public class GZIPResponseWrapper
+    extends HttpServletResponseWrapper
+{
+    //-- Attributes
+    protected HttpServletResponse _origResponse = null;
+    protected ServletOutputStream _stream = null;
+    protected PrintWriter _writer = null;
+
+    //-- Constructors
+    public GZIPResponseWrapper (HttpServletResponse response)
+    {
+        super (response);
+        _origResponse = response;
+    }
+
+    //-- Public Methods
+    public ServletOutputStream createOutputStream ()
+        throws IOException
+    {
+        return new GZIPResponseStream (_origResponse);
+    }
+
+    public void finishResponse ()
+        throws IOException
+    {
+        if ( _writer != null )
+        {
+            _writer.close ();
+        }
+        else
+        {
+            if ( _stream != null )
+            {
+                _stream.close ();
+            }
+        }
+    }
+
+
+    //-- HttpServletResponse methods
+    @Override
+    public void flushBuffer ()
+        throws IOException
+    {
+        _stream.flush ();
+    }
+
+    @Override
+    public ServletOutputStream getOutputStream ()
+        throws IOException
+    {
+        if ( _writer != null )
+        {
+            throw new IllegalStateException ("getWriter() has already been called!");
+        }
+
+        if ( _stream == null )
+        {
+            _stream = createOutputStream ();
+        }
+        return _stream;
+    }
+
+    @Override
+    public PrintWriter getWriter ()
+        throws IOException
+    {
+        if ( _stream != null )
+        {
+            throw new IllegalStateException ("getOutputStream() has already been called!");
+        }
+
+        if (_writer == null)
+        {
+            _stream = createOutputStream ();
+            _writer = new PrintWriter (new OutputStreamWriter (_stream, "UTF-8"));
+        }
+        return _writer;
+    }
+
+    @Override
+    public void setContentLength (int length)
+    {
+    }
+}

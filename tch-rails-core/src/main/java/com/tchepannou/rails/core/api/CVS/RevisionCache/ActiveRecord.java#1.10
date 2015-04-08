@@ -1,0 +1,455 @@
+package com.tchepannou.rails.core.api;
+
+import com.tchepannou.rails.core.exception.MappingException;
+import com.tchepannou.rails.core.util.EntityManagerThreadLocal;
+import com.tchepannou.rails.core.util.I18nThreadLocal;
+import com.tchepannou.util.StringUtil;
+import java.io.Serializable;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import javax.persistence.EntityManager;
+import javax.persistence.PostLoad;
+import javax.persistence.PostPersist;
+import javax.persistence.PostRemove;
+import javax.persistence.PostUpdate;
+import javax.persistence.Transient;
+import org.apache.commons.beanutils.BeanUtilsBean;
+import org.apache.commons.beanutils.BeanUtilsBean2;
+import org.apache.log4j.Logger;
+
+/**
+ * Implementation of the <a href="http://en.wikipedia.org/wiki/Active_record_pattern">ActiveRecord</a> design pattern.
+ *
+ * @author  Herve Tchepannou
+ */
+public abstract class ActiveRecord
+    implements Serializable
+{
+    //-- Static Attributes
+    private static final Logger LOG = Logger.getLogger (ActiveRecord.class);
+    //-- Attributes
+    /** validation errors */
+    private transient List<String> __errors = null;
+
+    //-- Abstract methods
+    public abstract long getId ();
+
+    public abstract void setId (long id);
+
+    //-- Translation methods
+    protected I18n getI18n ()
+    {
+        return I18nThreadLocal.getI18n ();
+    }
+
+    //-- Persistence methods
+    /**
+     * Update the model and save it
+     *
+     * @param properties    name/value pairs containing the model properties
+     *
+     * @return if <code>performValidation</code> is <code>true</code>, this method returns <code>false</code> if the validation fails,
+     *         else it will always returns <code>true</code>.
+     */
+    public final boolean update (Map properties)
+    {
+        return update (properties, true);
+    }
+
+    /**
+     * Update the mode and save it.
+     * This method calls:
+     * <ol>
+     *  <li>{@link #populate(java.util.Map) for populating the model properties</li>
+     *  <li>{@link #save (boolean, javax.persistence.Entity) for saving the model into the database</li>
+     * </ol>
+     * 
+     * @param properties             name/value pairs containing the model properties
+     * @param performValidation      if <code>true</code> the model will be validated
+     *
+     * @return if <code>performValidation</code> is <code>true</code>, this method returns <code>false</code> if the validation fails,
+     *         else it will always returns <code>true</code>.
+     */
+    public final boolean update (Map properties, boolean performValidation)
+    {
+        if ( performValidation && isValid () )
+        {
+            return false;
+        }
+
+        populate (properties);
+        return save (performValidation);
+    }
+
+    /**
+     *
+     */
+    public Map toProperties ()
+    {
+        Map properties = new HashMap ();
+        for ( Method m: getClass ().getMethods () )
+        {
+            String name = m.getName ();
+            Class[] types = m.getParameterTypes ();
+            if ( !name.startsWith ("get") || types.length > 0 )
+            {
+                continue;
+            }
+
+            String property = name.length () > 4
+                ? name.substring (3, 4).toLowerCase () + name.substring (4)
+                : name.substring (3, 4).toLowerCase ();
+            try
+            {
+                Object value = m.invoke (this);
+                if ( value != null )
+                {
+                    properties.put (property, value);
+                    if ( value instanceof ActiveRecord )
+                    {
+                        properties.put (property + "Id", (( ActiveRecord ) value).getId ());
+                    }
+                }
+            }
+            catch ( IllegalAccessException e )
+            {
+                LOG.warn ("Unable to get property: " + property, e);
+            }
+            catch ( InvocationTargetException e )
+            {
+                LOG.warn ("Unable to get property: " + property, e);
+            }
+        }
+        return properties;
+    }
+
+    /**
+     * Populate the model properties from a set of name/value pairs
+     *
+     * @param properties    name/value pairs containing the model properties
+     */
+    public void populate (Map properties)
+    {
+        BeanUtilsBean mapper = getBeanMapper ();
+        try
+        {
+            mapper.populate (this, properties);
+        }
+        catch ( IllegalAccessException ex )
+        {
+            throw new MappingException ("Unable to populate the model", ex);
+        }
+        catch ( InvocationTargetException ex )
+        {
+            throw new MappingException ("Unable to populate the model", ex);
+        }
+    }
+
+    /**
+     * Save the model into the database.
+     * if the model is new, it get created into the database
+     *
+     * @param performValidation if <code>true</code>, the model will be validated
+     *
+     * @return if <code>performValidation</code> is <code>true</code>, this method returns <code>false</code> if the validation fails,
+     *         else it will always returns <code>true</code>.
+     */
+    public boolean save (boolean performValidation)
+    {
+        if ( performValidation && !canSave () )
+        {
+            return false;
+        }
+
+        if ( isNewRecord () )
+        {
+            EntityManager em = getEntityManager ();
+            em.persist (this);
+        }
+        return true;
+    }
+
+    /**
+     * Delete the model from the database
+     */
+    public boolean delete (boolean checkIfCanDelete)
+    {
+        if ( checkIfCanDelete && !canDelete () )
+        {
+            return false;
+        }
+
+        EntityManager em = getEntityManager ();
+        em.remove (this);
+        return true;
+    }
+
+    @Transient
+    public boolean isNewRecord ()
+    {
+        return getId () == 0;
+    }
+
+    /**
+     * Callback method called after the object is updated
+     */
+    @PostUpdate
+    public void postUpdate ()
+    {
+    }
+
+    /**
+     * Callback method called after the object is deleted
+     */
+    @PostRemove
+    public void postRemove ()
+    {
+    }
+
+    /**
+     * Callback method called after the object is created
+     */
+    @PostPersist
+    public void postPersist ()
+    {
+    }
+
+    /**
+     * Callback method called after the object is loaded
+     */
+    @PostLoad
+    public void postLoad ()
+    {
+        resetErrors ();
+    }
+
+    //-- Validation methods
+    /**
+     * Returns <code>true</code> is there is a validation error
+     */
+    @Transient
+    public final boolean isValid ()
+    {
+        return __errors == null || __errors.isEmpty ();
+    }
+
+    @Transient
+    public final boolean isInvalid ()
+    {
+        return !isValid ();
+    }
+
+    /**
+     * Check if the current bean can be deleted
+     *
+     * @return <code>true</code> if no validation error
+     */
+    public boolean canDelete ()
+    {
+        if ( __errors == null )
+        {
+            __errors = new ArrayList<String> ();
+        }
+        return isValid ();
+    }
+
+    /**
+     * Check if the current bean can be saved
+     *
+     * @return <code>true</code> if no validation error
+     */
+    public boolean canSave ()
+    {
+        if ( __errors == null )
+        {
+            __errors = new ArrayList<String> ();
+        }
+        return isValid ();
+    }
+
+    /**
+     * Return the list of validation errors.
+     * If the validation has not been performed, this method will call {@link #validate ()}
+     */
+    public final List<String> getErrors ()
+    {
+        if ( __errors == null )
+        {
+            return new ArrayList<String> ();
+        }
+        else
+        {
+            return __errors;
+        }
+    }
+
+    //-- Debug methods
+    public final String inspect ()
+    {
+        try
+        {
+            BeanUtilsBean mapper = getBeanMapper ();
+            Map info;
+            info = mapper.describe (this);
+            StringBuilder sb = new StringBuilder ();
+            sb.append (toString ()).append ("[\n");
+            for ( Object name: info.keySet () )
+            {
+                Object value = info.get (name);
+                sb.append (" ").append (name).append ("=");
+                if ( value == null )
+                {
+                    sb.append ("<null>\n");
+                }
+                else
+                {
+                    sb.append (value).append ("\n");
+                }
+            }
+            sb.append ("]\n");
+            return sb.toString ();
+        }
+        catch ( IllegalAccessException ex )
+        {
+            throw new MappingException ("Unable to inspect " + this, ex);
+        }
+        catch ( InvocationTargetException ex )
+        {
+            throw new MappingException ("Unable to inspect " + this, ex);
+        }
+        catch ( NoSuchMethodException ex )
+        {
+            throw new MappingException ("Unable to inspect " + this, ex);
+        }
+    }
+
+    //-- Object override
+    @Override
+    public int hashCode ()
+    {
+        return Long.valueOf (getId ()).hashCode ();
+    }
+
+    @Override
+    public boolean equals (Object object)
+    {
+        if ( object == null )
+        {
+            return false;
+        }
+        else if ( this == object )
+        {
+            return true;
+        }
+        else if ( object instanceof ActiveRecord )
+        {
+            ActiveRecord other = ( ActiveRecord ) object;
+            long id = getId ();
+
+            if ( id == 0 )
+            {
+                return this == other;
+            }
+            else
+            {
+                return id == other.getId ();
+            }
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    @Override
+    public String toString ()
+    {
+        String classname = getClass ().getName ();
+        int i = classname.lastIndexOf ('.');
+        String xclassname = i > 0
+            ? classname.substring (i + 1)
+            : classname;
+        return xclassname + "{" + getId () + "}";
+    }
+
+    //-- Protected
+    /**
+     * Record a validation error
+     */
+    protected boolean addError (String error)
+    {
+        if ( __errors == null )
+        {
+            __errors = new ArrayList<String> ();
+        }
+        return __errors.add (error);
+    }
+
+    /**
+     * Record a validation error
+     */
+    protected boolean addErrors (List<String> errors)
+    {
+        if ( __errors == null )
+        {
+            __errors = new ArrayList<String> ();
+        }
+        return __errors.addAll (errors);
+    }
+
+    /**
+     * Returns the current instance of the {@link EntityManager}
+     */
+    protected static EntityManager getEntityManager ()
+    {
+        return EntityManagerThreadLocal.getEntityManager ();
+    }
+
+    protected ActiveRecord toActiveRecord (Map properties, String name, Class type)
+    {
+        long id = toLong (properties, name);
+        return id > 0
+            ? ( ActiveRecord ) getEntityManager ().find (type, id)
+            : null;
+    }
+
+    protected long toLong (Map properties, String name)
+    {
+        Object value = properties.get (name);
+        if ( value == null )
+        {
+            return 0;
+        }
+        else
+        {
+            return StringUtil.toLong (value.toString (), 0);
+        }
+    }
+
+    /**
+     * id to ActiveController
+     */
+    protected void id2ac (Map properties, String name, String xname, Class type)
+    {
+        if ( properties.containsKey (name) )
+        {
+            ActiveRecord obj = toActiveRecord (properties, name, type);
+            properties.put (xname, obj);
+        }
+    }
+
+    //-- Private
+    private BeanUtilsBean getBeanMapper ()
+    {
+        return new BeanUtilsBean2 ();
+    }
+
+    private void resetErrors ()
+    {
+        __errors = null;
+    }
+}

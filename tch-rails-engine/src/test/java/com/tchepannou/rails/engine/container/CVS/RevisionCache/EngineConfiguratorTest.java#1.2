@@ -1,0 +1,53 @@
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+package com.tchepannou.rails.engine.container;
+
+import com.tchepannou.rails.core.api.OptionService;
+import com.tchepannou.rails.core.api.RenderService;
+import com.tchepannou.rails.core.api.UserService;
+import junit.framework.TestCase;
+import org.springframework.mock.web.MockServletContext;
+
+/**
+ *
+ * @author herve
+ */
+public class EngineConfiguratorTest extends TestCase {
+    
+    public EngineConfiguratorTest(String testName) {
+        super(testName);
+    }
+
+    public void testConfigure ()
+        throws Exception
+    {
+        Engine engine = new Engine ();
+        EngineConfigurator cfg = new EngineConfigurator ();
+        MockServletContext sc = new MockServletContext ();
+
+        cfg.configure (engine, sc);
+
+        assertEquals ("loginURL", "/login", engine.getLoginURL ());
+        assertEquals ("basePackage", "com.tchepannou.rails", engine.getBasePackage ());
+
+        assertNotNull ("service[UserService]", engine.findService (UserService.class));
+        assertNotNull ("service[OptionService]", engine.findService (OptionService.class));
+        assertNotNull ("service[RenderService]", engine.findService (RenderService.class));
+
+        assertEquals ("persistenceUnit", "test", engine.getPersistenceUnit ());
+
+        assertEquals ("actionInterceptors", 4, engine.getActionInterceptors ().size ());
+
+        assertEquals ("jobsInteceptors", 3, engine.getJobInterceptors ().size ());
+
+        assertEquals ("mailInteceptors", 1, engine.getMailInterceptors ().size ());
+
+        assertEquals ("messsageInteceptors", 1, engine.getMessageInterceptors().size ());
+
+        assertEquals ("jobs", 1, engine.getJobContainer ().getJobs ().size ());
+    }
+
+}

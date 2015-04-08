@@ -1,0 +1,949 @@
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package com.tchepannou.rails.core.api;
+
+import com.tchepannou.rails.core.annotation.Action;
+import com.tchepannou.rails.core.util.EntityManagerThreadLocal;
+import com.tchepannou.rails.core.util.I18nThreadLocal;
+import com.tchepannou.rails.core.util.Util;
+import com.tchepannou.util.MimeUtil;
+import com.tchepannou.util.StringUtil;
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.Serializable;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import javax.jms.JMSException;
+import javax.mail.MessagingException;
+import javax.persistence.EntityManager;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpSession;
+import org.apache.commons.fileupload.FileItem;
+import org.apache.commons.fileupload.servlet.ServletFileUpload;
+import org.apache.log4j.Logger;
+
+/**
+ *
+ * @author herve
+ */
+public class ActionController
+{
+    //-- Static Methods
+    private static final Logger LOG = Logger.getLogger (ActionController.class);
+
+    /**
+     * IMPORTANT: NEVER CHANGE THIS.
+     * This static variable is public for testing purpose!
+     */
+    public static HttpRequestWrapperProvider _requestWrapperProvider = new HttpRequestWrapperProviderImpl ();
+    public static final String ACTION_INDEX = "index";
+    public static final String SESSION_USER_ID = "com.tchepannou.rails.user_id";
+    public static final String SESSION_FLASH = "com.tchepannou.rails.flash";
+    public static final String FLASH_NOTICE = "notice";
+    public static final String FLASH_ERROR = "error";
+    public static final String PARAM_REDIRECT = "redirect";
+    public static final String VAR_I18N = "i18n";
+    public static final String VAR_REQUEST = "request";
+    public static final String VAR_USER = "user";
+    public static final String VAR_UTIL = "util";
+    public static final String VAR_FLASH = "flash";
+//    public static final String VAR_ERRORS = "errors";
+
+
+    //-- Attributes
+    /**
+     * When the response should expire.
+     * By default, the value is <code>-1</code> which means the resource should not be cached
+     */
+    private long _expirySeconds = -1;
+
+    /**
+     * Last modification of the resource
+     */
+    private long _lastModificationDate = -1;
+
+    /**
+     * List of variables for the view.
+     */
+    private Map<String, Object> _viewVariables = new HashMap<String, Object> ();
+
+    /**
+     * Output resource
+     */
+    private Resource _resource;
+
+    /**
+     * Action context
+     */
+    private ActionContext _actionContext;
+
+    /**
+     * Request parameters
+     */
+    private Map<String, Object> __requestParameters;
+
+    /**
+     * Request files
+     */
+    private List<FileItem> __requestFiles;
+
+    /**
+     * Constroller name
+     */
+    private String __name;
+
+    /**
+     * Headers
+     */
+    private Map<String, Object> _responseHeaders = new HashMap<String, Object> ();
+
+    /**
+     * Flash memory
+     */
+    private Map _flash = new HashMap ();
+
+
+    //-- Public methods
+    public void addErrors (List<String> errors)
+    {
+        for (String error : errors)
+        {
+            addError (error);
+        }
+    }
+
+    public void addError (String error)
+    {
+        String err = (String)getFlash (FLASH_ERROR);
+        if (StringUtil.isEmpty (err))
+        {
+            setFlash (FLASH_ERROR, error);
+        }
+        else
+        {
+            setFlash(FLASH_ERROR, err + "<p>" + error + "</p>");
+        }
+    }
+    
+    public void addError (String error, String...args)
+    {
+        String xerror = getI18n ().translate (error, args);
+        addError (xerror);
+    }
+
+    /**
+     * Return the name of the method to execute for a given path
+     */
+    public String convertPathToAction (String p)
+    {
+        /* extract the action */
+        String path = p.startsWith ("/")
+            ? p.substring (1)
+            : p;
+        int i = path.lastIndexOf ("/");
+        String action = null;
+        if ( i <= 0 )
+        {
+            action = ACTION_INDEX;
+        }
+        else
+        {
+            action = path.substring (i + 1);
+        }
+        return action;
+    }
+
+    /**
+     * Add a view variable
+     *
+     * @param name  Name of the variable
+     * @param value Value of the variable
+     */
+    public void addViewVariable (String name, Object value)
+    {
+        if ( LOG.isTraceEnabled () )
+        {
+            LOG.trace ("addViewVaraible(" + name + "," + value + ")");
+        }
+
+        _viewVariables.put (name, value);
+    }
+
+    /**
+     * Add a set of view varaibles
+     */
+    public void addViewVariables (Map<String, Object> vars)
+    {
+        _viewVariables.putAll (vars);
+    }
+
+    /**
+     * Redirect the user to the login page.
+     * The login page is expected at <code>/login</code>
+     *
+     */
+    public void redirectToLogin ()
+    {
+        if ( LOG.isTraceEnabled () )
+        {
+            LOG.trace ("redirectToLogin()");
+        }
+        ActionContext ctx = getActionContext ();
+        String redirectUrl = getRequestPathInfo (true);
+
+        String loginUrl = ctx.getContainerContext ().getLoginURL ();
+        Map<String, Object> params = new HashMap<String, Object> ();
+        params.put (PARAM_REDIRECT, redirectUrl);
+        redirectTo (loginUrl, params);
+    }
+
+    /**
+     * Returns the default Resource for this controller - in the case no resource available
+     *
+     * @param name  Name of the controller
+     * @param action    Action
+     */
+    public Resource createDefaultResource (String name, String action)
+        throws IOException
+    {
+        String path = "/" + name + "/" + action;
+        int i = action.lastIndexOf (".");
+        String ext = i > 0
+            ? action.substring (i)
+            : ".html";
+        return createViewResource (path, false);
+    }
+
+    public Map<String, Object> getResponseHeaders ()
+    {
+        return _responseHeaders;
+    }
+
+    /**
+     * Return the current user
+     */
+    public User getUser ()
+    {
+        Long id = ( Long ) getSession (SESSION_USER_ID);
+        if ( id == null )
+        {
+            return null;
+        }
+        else
+        {
+            return findUser (id.longValue ());
+        }
+    }
+
+    /**
+     * Set the user of the current session
+     *
+     * @param user  User to set - if <code>null</code>, the user will be reset
+     */
+    public void setUser (User user)
+    {
+        if ( user == null )
+        {
+            setSession (SESSION_USER_ID, null);
+        }
+        else
+        {
+            long id = user.getId ();
+            setSession (SESSION_USER_ID, id);
+        }
+    }
+
+    /**
+     * Set the user of the current session
+     *
+     * @param userId  ID of the user to set
+     */
+    public void setUser (long userId)
+    {
+        User user = findUser (userId);
+        setUser (user);
+    }
+
+    /**
+     * Set an object into the session
+     *
+     * @param name name of the object
+     * @param value value - if <Code>null</code>, the object will be removed from the session
+     */
+    public void setSession (String name, Object value)
+    {
+        HttpSession session = getActionContext ().getRequest ().getSession ();
+        session.setAttribute (name, value);
+    }
+
+    public void removeSession (String name)
+    {
+        HttpSession session = getActionContext ().getRequest ().getSession ();
+        session.removeAttribute (name);
+    }
+
+    /**
+     * Invalidate the current session
+     */
+    public void resetSession ()
+    {
+        HttpSession session = getActionContext ().getRequest ().getSession ();
+        session.invalidate ();
+    }
+
+    public Map getFlash ()
+    {
+        return _flash;
+    }
+    public void setFlash(Map flash)
+    {
+        _flash = flash;
+    }
+    
+    public Object getFlash (String name)
+    {
+        return _flash.get (name);
+    }
+
+    public void setFlash (String name, Object value)
+    {
+        if (value != null)
+        {
+            _flash.put (name, value);
+            if (FLASH_ERROR.equals (name))
+            {
+                getActionContext ().setRollback (true);
+            }
+        }
+        else
+        {
+            _flash.remove (name);
+        }
+    }
+
+    public I18n getI18n ()
+    {
+        return I18nThreadLocal.getI18n (getLocale ());
+    }
+
+    public Locale getLocale ()
+    {
+        return getRequest ().getLocale ();
+    }
+
+    /**
+     * Returns the name of the controller
+     */
+    public final String getName ()
+    {
+        if ( __name == null )
+        {
+            __name = getName (getClass ());
+        }
+        return __name;
+    }
+
+    /**
+     * Returns the computed name of a controller
+     */
+    public static String getName (Class<? extends ActionController> clazz)
+    {
+        Action annotation = clazz.getAnnotation (Action.class);
+        if (annotation != null)
+        {
+            String name = annotation.name ();
+            if (!StringUtil.isEmpty (name))
+            {
+                return name;
+            }
+        }
+
+        String fqcn = clazz.getName ();
+        int i = fqcn.lastIndexOf ('.');
+        String name = i > 0
+            ? fqcn.substring (i + 1)
+            : fqcn;
+
+        String xname = name.endsWith ("ActionController")
+            ? name.substring (0, name.length () - 16)
+            : name;
+        return xname.substring (0, 1).toLowerCase () + xname.substring (1);
+    }
+
+    public final List<FileItem> getRequestFiles ()
+    {
+        if ( __requestFiles == null )
+        {
+            loadRequestData ();
+        }
+        return __requestFiles;
+    }
+
+    public final FileItem getRequestFile ()
+    {
+        List<FileItem> files = getRequestFiles ();
+        if ( files == null || files.isEmpty () )
+        {
+            return null;
+        }
+        else
+        {
+            FileItem file = files.get (0);
+            return file.getSize () > 0
+                ? file
+                : null;
+        }
+    }
+
+    public Map<String, Object> getRequestParameters ()
+    {
+        if ( __requestParameters == null )
+        {
+            loadRequestData ();
+        }
+        return __requestParameters;
+    }
+
+    public final String getRequestParameter (String name)
+    {
+        Map params = getRequestParameters ();
+        return getRequestParameter (params, name);
+    }
+
+    public final String getRequestParameter (Map params, String name)
+    {
+        if ( params == null )
+        {
+            return null;
+        }
+        else
+        {
+            Object obj = params.get (name);
+            if ( obj instanceof String )
+            {
+                return ( String ) obj;
+            }
+            else if ( obj instanceof String[] )
+            {
+                return (( String[] ) obj)[0];
+            }
+            else
+            {
+                return obj != null
+                    ? obj.toString ()
+                    : null;
+            }
+        }
+    }
+
+    public final String[] getRequestParameterValues (String name)
+    {
+        Map params = getRequestParameters ();
+        return getRequestParameterValues (params, name);
+    }
+
+    public final String[] getRequestParameterValues (Map params, String name)
+    {
+        Object obj = params.get (name);
+        if ( obj instanceof String )
+        {
+            return new String[]
+                {
+                    ( String ) obj
+                };
+        }
+        else if ( obj instanceof String[] )
+        {
+            return ( String[] ) obj;
+        }
+        else if (obj == null)
+        {
+            return null;
+        }
+        else
+        {
+            Class type = obj.getClass ();
+            if (type.isArray ())
+            {
+                Object[] objs = (Object[])obj;
+                String[] array = new String[objs.length];
+                for (int i=0 ; i<array.length ; i++)
+                {
+                    Object o = objs[i].toString ();
+                    array[i] = o != null ? o.toString () : null;
+                }
+                return array;
+            }
+            else
+            {
+                return new String[] {obj.toString ()};
+            }
+        }
+    }
+
+    public final long getRequestParameterAsLong (String name, long defaultValue)
+    {
+        String value = getRequestParameter (name);
+        return StringUtil.toLong (value, defaultValue);
+    }
+
+    public final ActiveRecord getRequestParameterAsActiveRecord (String name, Class<? extends ActiveRecord> type)
+    {
+        long id = getRequestParameterAsLong (name, 0);
+        if ( id > 0 )
+        {
+            EntityManager em = getEntityManager ();
+            return em.find (type, id);
+        }
+        return null;
+    }
+
+    public final int getRequestParameterAsInt (String name, int defaultValue)
+    {
+        String value = getRequestParameter (name);
+        return StringUtil.toInt (value, defaultValue);
+    }
+
+    public final double getRequestParameterAsDouble (String name, double defaultValue)
+    {
+        String value = getRequestParameter (name);
+        return StringUtil.toDouble (value, defaultValue);
+    }
+
+    /**
+     * Returns a session object by it's name or <code>null</code> if not found
+     *
+     * @param name Name of the requested object
+     */
+    public final Object getSession (String name)
+    {
+        HttpSession session = getActionContext ().getRequest ().getSession (false);
+        return session != null
+            ? session.getAttribute (name)
+            : null;
+    }
+
+    /**
+     * Returns the list of interceptors - By default returns the container interceptors
+     */
+    public List<ActionInterceptor> getActionInterceptors ()
+    {
+        return getActionContext ().getContainerContext ().getActionInterceptors ();
+    }
+
+    public boolean hasErrors ()
+    {
+        Map flash = getFlash ();
+        return flash != null && flash.containsKey (FLASH_ERROR);
+    }
+
+    //-- Protected
+    /**
+     * Deliver an email
+     *
+     * @param template Name of the email template. The email is located at <code>/mail/<i>mailer.name()</i>/<i>template</i></code>
+     * @param data  Data to apply to the template
+     * @param mailer Email controller
+     *
+     * @throws IOException if any error while loading the email template
+     * @throws MessagingException if any error while sending the email
+     */
+    protected void deliver (String template, Map data, MailController mailer)
+        throws IOException,
+               MessagingException
+    {
+        getActionContext ().getContainerContext ().deliver (template, data, mailer);
+    }
+
+    protected void sendToQueue (String destination, Serializable message)
+    {
+        if ( LOG.isTraceEnabled () )
+        {
+            LOG.trace ("sendToQueue(" + destination + "," + message + ")");
+        }
+        try
+        {
+            getMessagingService ().sendToQueue (destination, message);
+        }
+        catch ( JMSException e )
+        {
+            throw new IllegalStateException ("JMS error", e);
+        }
+    }
+
+    protected void sendToTopic (String destination, Serializable message)
+    {
+        if ( LOG.isTraceEnabled () )
+        {
+            LOG.trace ("sendToTopic(" + destination + "," + message + ")");
+        }
+        try
+        {
+            getMessagingService ().sendToTopic (destination, message);
+        }
+        catch ( JMSException e )
+        {
+            throw new IllegalStateException ("JMS error", e);
+        }
+    }
+
+    protected void addResponseHeader (String name, String value)
+    {
+        _responseHeaders.put (name, value);
+    }
+
+    protected void addResponseHeader (String name, Date value)
+    {
+        _responseHeaders.put (name, value);
+    }
+
+    /**
+     * Redirect to the page for displaying a model
+     * @param model target model
+     */
+    protected void redirectTo (ActiveRecord model)
+    {
+        if ( LOG.isTraceEnabled () )
+        {
+            LOG.trace ("redirectTo(" + model + ")");
+        }
+
+        String url = redirectUrl (model);
+        redirectTo (url);
+    }
+
+    /**
+     * Redirect to a specific URL
+     * @param URL target URL
+     */
+    protected void redirectTo (String url)
+    {
+        if ( LOG.isTraceEnabled () )
+        {
+            LOG.trace ("redirectTo(" + url + ")");
+        }
+
+        redirectTo (url, null);
+    }
+
+    /**
+     * Redirect to a specific URL with parameters
+     *
+     * @param url Target URL
+     * @param parameters Target parameters
+     */
+    protected void redirectTo (String url, Map parameters)
+    {
+        if ( LOG.isTraceEnabled () )
+        {
+            LOG.trace ("redirectTo(" + url + "," + parameters + ")");
+        }
+
+        ActionContext ac = getActionContext ();
+        HttpServletRequest req = ac.getRequest ();
+        _resource = new RedirectResource (url, parameters, req);
+
+        setSession (SESSION_FLASH, _flash);
+    }
+
+    protected void sendError (int status)
+    {
+        if ( LOG.isTraceEnabled () )
+        {
+            LOG.trace ("sendError(" + status + ")");
+        }
+        sendError (status, null);
+    }
+
+    /**
+     * Send to the client an HTTP error
+     *
+     * @param status HTTP Status code
+     * @param message status message
+     */
+    protected void sendError (int status, String message)
+    {
+        if ( LOG.isTraceEnabled () )
+        {
+            LOG.trace ("sendError(" + status + "," + message + ")");
+        }
+        _resource = new ErrorResource (status, message);
+    }
+
+    /**
+     * Ensure that the page never get cached on client computer
+     */
+    protected void expiresNow ()
+    {
+        _expirySeconds = -1;
+    }
+
+    protected void expiresIn (int seconds)
+    {
+        expiresIn (seconds, 0, 0, 0);
+    }
+
+    protected void expiresIn (int seconds, int minutes)
+    {
+        expiresIn (seconds, minutes, 0, 0);
+    }
+
+    protected void expiresIn (int seconds, int minutes, int hours)
+    {
+        expiresIn (seconds, minutes, hours, 0);
+    }
+
+    /**
+     * Set the expiry of the page
+     */
+    protected void expiresIn (int seconds, int minutes, int hours, int days)
+    {
+        _expirySeconds = (long)seconds + (long)minutes * 60L + (long)hours * 60L * 60L + (long)days * 24L * 60L * 60L;
+    }
+
+    protected void renderView (String path)
+    {
+        String mime = MimeUtil.getInstance ().getMimeTypeByFile (path);
+        _resource = createViewResource (path, false);
+    }
+
+    /**
+     * Restore a view with the current request stated
+     *
+     * @param view Name of the view to restore
+     */
+    protected void restoreView (String view)
+    {
+        _resource = createViewResource (view, true);
+    }
+
+    /**
+     * Download a file to the client.
+     *
+     * @param file  File to download to the client
+     * @param message status message
+     */
+    protected void renderFile (File file)
+    {
+        _resource = new FileResource (file);
+    }
+
+    /**
+     * Download a stream to the client
+     *
+     * @param in data stream
+     * @param contentType mime type of the stream
+     */
+    protected void renderStream (InputStream in, String contentType)
+    {
+        _resource = new InputStreamResource (in, contentType);
+    }
+
+    protected void renderText (String text)
+    {
+        renderText (text, MimeUtil.TEXT);
+    }
+
+    protected void renderText (String text, String contentType)
+    {
+        _resource = new TextResource (text, contentType);
+    }
+
+    protected UserService getUserService ()
+    {
+        return ( UserService ) getService (UserService.class);
+    }
+
+    protected RenderService getRenderService ()
+    {
+        return ( RenderService ) getService (RenderService.class);
+    }
+
+    protected OptionService getOptionService ()
+    {
+        return ( OptionService ) getService (OptionService.class);
+    }
+
+    protected MessagingService getMessagingService ()
+    {
+        return ( MessagingService ) getService (MessagingService.class);
+    }
+
+    protected Service getService (Class type)
+    {
+        Service service = ( Service ) findService (type);
+        if ( service == null )
+        {
+            throw new IllegalStateException ("Service not found: " + type);
+        }
+        return service;
+
+    }
+
+    protected Service findService (Class<? extends Service> type)
+    {
+        return getActionContext ().getContainerContext ().findService (type);
+    }
+
+    protected User findUser (long userId)
+    {
+        return getUserService ().findUser (userId);
+    }
+
+    protected String getRequestPathInfo (boolean includeQueryString)
+    {
+        ActionContext ctx = getActionContext ();
+        HttpServletRequest req = ctx.getRequest ();
+        String url = req.getPathInfo ();
+
+        if ( includeQueryString )
+        {
+            StringBuilder qs = new StringBuilder ();
+            Map params = getRequestParameters ();
+            for ( Object name: params.keySet () )
+            {
+                String[] values = getRequestParameterValues (name.toString ());
+                if ( values != null )
+                {
+                    for ( int i = 0; i < values.length; i++ )
+                    {
+                        String value = values[i];
+                        if ( value != null )
+                        {
+                            if ( qs.length () > 0 )
+                            {
+                                qs.append ('&');
+                            }
+                            qs.append (name).append ('=').append (value);
+                        }
+                    }
+                }
+            }
+            if ( qs.length () > 0 )
+            {
+                url = url + "?" + qs.toString ();
+            }
+        }
+        return url;
+    }
+
+    protected EntityManager getEntityManager ()
+    {
+        return EntityManagerThreadLocal.getEntityManager ();
+    }
+
+    //-- Private methods
+    private Resource createViewResource (String path, boolean restore)
+    {
+        RenderService rs = getRenderService ();
+        ContainerContext cc = getActionContext ().getContainerContext ();
+
+        if ( restore )
+        {
+            addViewVariables (getRequestParameters ());
+        }
+        _viewVariables.put (VAR_I18N, getI18n ());
+        _viewVariables.put (VAR_REQUEST, getRequest ());
+        _viewVariables.put (VAR_USER, getUser ());
+        _viewVariables.put (VAR_UTIL, new Util (cc));
+        _viewVariables.put (VAR_FLASH, getFlash ());
+//        _viewVariables.put (VAR_ERRORS, getErrors ());
+
+        return restore
+            ? new RestoreViewResource (path, rs, _viewVariables)
+            : new ViewResource (path, rs, _viewVariables);
+    }
+
+    private void loadRequestData ()
+    {
+        HttpRequestWrapper wrapper = _requestWrapperProvider.getInstance (this);
+
+        __requestFiles = wrapper.getFiles ();
+        __requestParameters = wrapper.getParameters ();
+    }
+
+    //-- Private methods
+    private String redirectUrl (ActiveRecord model)
+    {
+        String classname = model.getClass ().getSimpleName ();
+        return "/" + classname.toLowerCase () + "/show?id=" + model.getId ();
+    }
+
+    //-- Getter/Setter
+    public long getLastModificationDate ()
+    {
+        return _lastModificationDate;
+    }
+
+    public void setLastModificationDate (long lastModificationDate)
+    {
+        this._lastModificationDate = lastModificationDate;
+    }
+
+    public long getExpirySeconds ()
+    {
+        return _expirySeconds;
+    }
+
+    public Map<String, Object> getViewVariables ()
+    {
+        return _viewVariables;
+    }
+
+    public Resource getResource ()
+    {
+        return _resource;
+    }
+
+    public ActionContext getActionContext ()
+    {
+        return _actionContext;
+    }
+
+    public void setActionContext (ActionContext context)
+    {
+        this._actionContext = context;
+    }
+
+    public HttpServletRequest getRequest ()
+    {
+        return getActionContext ().getRequest ();
+    }
+
+    public HttpServletResponse getResponse ()
+    {
+        return getActionContext ().getResponse ();
+    }
+
+    //-- Inner classes
+    /**
+     * Default implementation of {@link HttpRequestWrapperProvider}
+     */
+    private static class HttpRequestWrapperProviderImpl
+        implements HttpRequestWrapperProvider
+    {
+        public HttpRequestWrapper getInstance (ActionController controller)
+        {
+            HttpServletRequest request = controller.getRequest ();
+            boolean multipart = ServletFileUpload.isMultipartContent (request);
+            HttpRequestWrapper wrapper;
+            if ( !multipart )
+            {
+                wrapper = new HttpRequestWrapperSimple ();
+            }
+            else
+            {
+                wrapper = new HttpRequestWrapperMultiPart ();
+            }
+            wrapper.init (controller);
+            return wrapper;
+        }
+    }
+}

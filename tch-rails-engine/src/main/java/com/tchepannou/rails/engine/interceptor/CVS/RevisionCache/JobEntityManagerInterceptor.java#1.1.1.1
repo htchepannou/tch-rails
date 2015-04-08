@@ -1,0 +1,35 @@
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+package com.tchepannou.rails.engine.interceptor;
+
+import com.tchepannou.rails.core.api.JobController;
+import com.tchepannou.rails.core.api.JobInterceptor;
+import com.tchepannou.rails.core.util.EntityManagerThreadLocal;
+import javax.persistence.EntityManager;
+
+/**
+ * Open a new <code>EntityManager</code> prior the execution of the job
+ * @author herve
+ */
+public class JobEntityManagerInterceptor 
+    extends AbstractJobInterceptor
+{
+
+    @Override
+    public void after (JobController controller, Throwable cause)
+    {
+        EntityManager em = EntityManagerThreadLocal.getEntityManager ();
+        em.close ();
+    }
+
+    @Override
+    public int before (JobController controller)
+    {
+        EntityManagerThreadLocal.getEntityManager ();
+        return JobInterceptor.CONTINUE;
+    }
+
+}

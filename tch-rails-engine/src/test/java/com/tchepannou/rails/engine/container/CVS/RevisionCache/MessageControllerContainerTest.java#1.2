@@ -1,0 +1,109 @@
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+package com.tchepannou.rails.engine.container;
+
+import com.tchepannou.rails.ContainerContextImpl;
+import com.tchepannou.rails.core.api.ContainerContext;
+import com.tchepannou.rails.core.api.MessagingService;
+import com.tchepannou.rails.core.service.ActiveMQService;
+import com.tchepannou.rails.core.service.EmbeddedActiveMQService;
+import com.tchepannou.rails.message.TestQueueMessageController;
+import com.tchepannou.rails.message.TestTopicMessageController;
+import junit.framework.TestCase;
+
+/**
+ *
+ * @author herve
+ */
+public class MessageControllerContainerTest
+    extends TestCase {
+
+    private ContainerContext _cc;
+    private MessageControllerContainer _container;
+    private MessagingService _ms;
+
+    public MessageControllerContainerTest(String testName) {
+        super(testName);
+    }
+
+    @Override
+    protected void setUp ()
+        throws Exception
+    {
+        super.setUp ();
+
+        ContainerContextImpl cc = new ContainerContextImpl ();
+        _cc = cc;
+        cc.setBasePackage ("com.tchepannou.rails");
+
+        _ms = new EmbeddedActiveMQService ();
+        cc.register (MessagingService.class, _ms);
+
+        _container = new MessageControllerContainer ();
+
+        TestQueueMessageController._msg = null;
+        TestTopicMessageController._msg = null;
+    }
+
+    @Override
+    protected void tearDown ()
+        throws Exception
+    {
+        super.tearDown ();
+
+        if (_ms != null)
+        {
+            _ms.destroy ();
+        }
+    }
+
+
+
+    public void testInitDestroy ()
+    {
+        _container.init (_cc);
+        assertEquals ("number of MessageControllers", 2, _container.getMessageControllerWrappers ().size());
+
+        _container.destroy ();
+        assertEquals ("number of MessageControllers", 0, _container.getMessageControllerWrappers ().size());
+    }
+
+    public void testSendMessageToQueue ()
+        throws Exception
+    {
+        String data = getName ();
+
+        _container.init (_cc);
+        try
+        {
+            _ms.sendToQueue ("testQueueRails", data);
+            Thread.sleep (2000);
+            assertEquals ("data not sent", data, TestQueueMessageController._msg);
+        }
+        finally
+        {
+            _container.destroy ();
+        }
+    }
+
+    public void testSendMessageToTopic ()
+        throws Exception
+    {
+        String data = getName ();
+
+        _container.init (_cc);
+        try
+        {
+            _ms.sendToTopic ("testTopicRails", data);
+            Thread.sleep (2000);
+            assertEquals ("data not sent", data, TestTopicMessageController._msg);
+        }
+        finally
+        {
+            _container.destroy ();
+        }
+    }
+}

@@ -1,0 +1,29 @@
+package com.tchepannou.rails.core.annotation;
+
+import com.tchepannou.rails.core.api.ActionController;
+import com.tchepannou.rails.core.api.ActiveRecord;
+import java.lang.annotation.ElementType;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
+import java.lang.annotation.Target;
+
+/**
+ * Annotation that indicate an {@link ActionController}
+ */
+@Retention (RetentionPolicy.RUNTIME)
+@Target (value={ElementType.TYPE})
+public @interface  Action
+{
+    Class<? extends ActiveRecord> modelClass () default ActiveRecordDefault.class;
+
+
+    //-- Inner classes
+    /**
+     * Default value for ActiveRecord;
+     * See <a href="http://stackoverflow.com/questions/1178104/error-setting-a-default-null-value-for-an-annotations-field">this link</a>
+     */
+    public static abstract class ActiveRecordDefault
+        extends ActiveRecord
+    {
+    }
+}

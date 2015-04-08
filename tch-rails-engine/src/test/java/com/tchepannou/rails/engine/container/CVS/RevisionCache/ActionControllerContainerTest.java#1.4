@@ -1,0 +1,239 @@
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+package com.tchepannou.rails.engine.container;
+
+import com.tchepannou.rails.ContainerContextImpl;
+import com.tchepannou.rails.core.api.ActionController;
+import com.tchepannou.rails.core.api.ContainerContext;
+import com.tchepannou.rails.core.api.OptionService;
+import com.tchepannou.rails.core.api.RenderService;
+import com.tchepannou.rails.core.service.PropertiesOptionService;
+import com.tchepannou.rails.core.service.VelocityRenderService;
+import junit.framework.TestCase;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
+
+/**
+ *
+ * @author herve
+ */
+public class ActionControllerContainerTest extends TestCase {
+
+    private ContainerContext _cc;
+    private ActionControllerContainer _container;
+
+    public ActionControllerContainerTest(String testName) {
+        super(testName);
+    }
+
+    @Override
+    protected void setUp ()
+        throws Exception
+    {
+        super.setUp ();
+
+        ContainerContextImpl cc = new ContainerContextImpl ();
+        _cc = cc;
+        cc.setBasePackage ("com.tchepannou.rails");
+        cc.register (RenderService.class, new VelocityRenderService ());
+        cc.register (OptionService.class, new PropertiesOptionService ());
+
+        _container = new ActionControllerContainer ();
+    }
+
+
+    public void testInit ()
+    {
+        _container.init (_cc);
+        assertTrue ("initialized", _container.isInitialized ());
+        assertNotNull ("/test1/hello", _container.getActionControllerWrapper ("test1/wrapper"));
+        assertNotNull ("/test2/hello", _container.getActionControllerWrapper ("test2/wrapper"));
+        assertNull ("/xxx", _container.getActionControllerWrapper ("/xx"));
+    }
+
+    public void testDestroy ()
+    {
+        _container.init (_cc);
+        _container.destroy ();
+        assertFalse ("initialized", _container.isInitialized ());
+        assertNull ("/test1/hello", _container.getActionControllerWrapper ("test1/wrapper"));
+        assertNull ("/test2/hello", _container.getActionControllerWrapper ("test2/wrapper"));
+    }
+
+    public void testServiceHello ()
+        throws Exception
+    {
+        _container.init (_cc);
+
+        MockHttpServletRequest req = new MockHttpServletRequest (_cc.getServletContext ());
+        req.setPathInfo ("/test1/hello");
+
+        MockHttpServletResponse resp = new MockHttpServletResponse ();
+
+        _container.service (req, resp);
+
+        assertEquals ("HTTP status", 200, resp.getStatus ());
+        assertEquals ("response content", "<b>hello herve</b>", resp.getContentAsString ());
+    }
+
+
+    public void testServiceHelloTXT ()
+        throws Exception
+    {
+        _container.init (_cc);
+
+        MockHttpServletRequest req = new MockHttpServletRequest (_cc.getServletContext ());
+        req.setPathInfo ("/test1/hello.txt");
+
+        MockHttpServletResponse resp = new MockHttpServletResponse ();
+
+        _container.service (req, resp);
+
+        assertEquals ("HTTP status", 200, resp.getStatus ());
+        assertEquals ("response content", "hello herve", resp.getContentAsString ());
+    }
+
+    public void testServiceIndex ()
+        throws Exception
+    {
+        _container.init (_cc);
+
+        MockHttpServletRequest req = new MockHttpServletRequest (_cc.getServletContext ());
+        req.setPathInfo ("/test1");
+
+        MockHttpServletResponse resp = new MockHttpServletResponse ();
+
+        _container.service (req, resp);
+
+        assertEquals ("HTTP status", 200, resp.getStatus ());
+        assertEquals ("response content", "index", resp.getContentAsString ());
+    }
+
+    public void testServiceHome ()
+        throws Exception
+    {
+        _container.init (_cc);
+
+        MockHttpServletRequest req = new MockHttpServletRequest (_cc.getServletContext ());
+        req.setPathInfo ("");
+
+        MockHttpServletResponse resp = new MockHttpServletResponse ();
+
+        _container.service (req, resp);
+
+        assertEquals ("HTTP status", 200, resp.getStatus ());
+        assertEquals ("response content", "home", resp.getContentAsString ());
+    }
+
+    public void testServiceStatic ()
+        throws Exception
+    {
+        _container.init (_cc);
+
+        MockHttpServletRequest req = new MockHttpServletRequest (_cc.getServletContext ());
+        req.setPathInfo ("/static/txt/hello.txt");
+
+        MockHttpServletResponse resp = new MockHttpServletResponse ();
+
+        _container.service (req, resp);
+
+        assertEquals ("HTTP status", 200, resp.getStatus ());
+        assertEquals ("response content", "hello", resp.getContentAsString ());
+    }
+
+    public void testServiceWrongAction ()
+        throws Exception
+    {
+        _container.init (_cc);
+
+        MockHttpServletRequest req = new MockHttpServletRequest (_cc.getServletContext ());
+        req.setPathInfo ("/test1/xxx");
+
+        MockHttpServletResponse resp = new MockHttpServletResponse ();
+
+        _container.service (req, resp);
+
+        assertEquals ("HTTP status", 404, resp.getStatus ());
+    }
+
+    public void testServiceWrongController ()
+        throws Exception
+    {
+        _container.init (_cc);
+
+        MockHttpServletRequest req = new MockHttpServletRequest (_cc.getServletContext ());
+        req.setPathInfo ("/xxx");
+
+        MockHttpServletResponse resp = new MockHttpServletResponse ();
+
+        _container.service (req, resp);
+
+        assertEquals ("HTTP status", 404, resp.getStatus ());
+    }
+
+
+    public void testFlash ()
+        throws Exception
+    {
+        _container.init (_cc);
+
+        MockHttpServletRequest req = new MockHttpServletRequest (_cc.getServletContext ());
+        req.setPathInfo ("/flash/index");
+
+        MockHttpServletResponse resp = new MockHttpServletResponse ();
+
+        ActionController ctl = _container.service (req, resp);
+
+        assertEquals ("HTTP status", 200, resp.getStatus ());
+        assertEquals ("response content", "notice", resp.getContentAsString ());
+        assertNull ("flash is not reset", ctl.getSession (ActionController.SESSION_FLASH));
+    }
+
+    public void testFlashRedirect ()
+        throws Exception
+    {
+        _container.init (_cc);
+
+        MockHttpServletRequest req = new MockHttpServletRequest (_cc.getServletContext ());
+        req.setPathInfo ("/flash/redirect");
+
+        MockHttpServletResponse resp = new MockHttpServletResponse ();
+
+        ActionController ctl = _container.service (req, resp);
+
+        //assertEquals ("HTTP status", 302, resp.getStatus ());
+        assertNotNull ("flash is reset", ctl.getSession (ActionController.SESSION_FLASH));
+    }
+
+    public void testExpiry ()
+        throws Exception
+    {
+        _container.init (_cc);
+
+        MockHttpServletRequest req = new MockHttpServletRequest (_cc.getServletContext ());
+        req.setPathInfo ("/expire/index");
+
+        MockHttpServletResponse resp = new MockHttpServletResponse ();
+
+        ActionController ctl = _container.service (req, resp);
+        assertTrue (ctl.getExpirySeconds () > 0);
+    }
+
+    public void testIfModifiedSince ()
+        throws Exception
+    {
+        _container.init (_cc);
+
+        MockHttpServletRequest req = new MockHttpServletRequest (_cc.getServletContext ());
+        req.addHeader ("if-modified-since", System.currentTimeMillis ()-100);
+        req.setPathInfo ("/ifMofified/index");
+
+        MockHttpServletResponse resp = new MockHttpServletResponse ();
+
+        _container.service (req, resp);
+        assertEquals(304, resp.getStatus ());
+    }
+}

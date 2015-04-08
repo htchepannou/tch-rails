@@ -1,0 +1,78 @@
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+package com.tchepannou.rails.core.api;
+
+import com.tchepannou.util.MimeUtil;
+import com.tchepannou.util.StringUtil;
+import java.io.IOException;
+import java.io.OutputStream;
+import javax.servlet.http.HttpServletResponse;
+
+/**
+ * Abstract implementation of @{Resource}
+ * 
+ * @author herve
+ */
+public abstract class AbstractResource
+    implements Resource
+{    
+    //-- Attribute
+    private String _contentType;
+    private String _encoding = Resource.DEFAULT_ENCODING;
+
+
+    //-- Constructor
+    public AbstractResource ()
+    {
+    }
+    public AbstractResource (String contentType)
+    {
+        this(contentType, Resource.DEFAULT_ENCODING);
+    }
+    public AbstractResource (String contentType, String encoding)
+    {
+        _contentType = contentType;
+        _encoding = encoding;
+    }
+
+
+    //-- Abstract methods
+    protected abstract void output (OutputStream out)
+        throws IOException;
+
+
+    //-- Resource overrides
+    public void output (HttpServletResponse response)
+        throws IOException
+    {
+        String contentType = getContentType ();
+        if (StringUtil.isEmpty (contentType))
+        {
+            contentType = MimeUtil.HTML;
+        }
+        String encoding = getEncoding ();
+        response.setContentType (contentType);
+        response.setCharacterEncoding (encoding);
+        response.addHeader ("Content-Type", contentType + "; charset=" + encoding);
+        output (response.getOutputStream ());
+    }
+
+    public boolean removeFlashAfterOutput ()
+    {
+        return true;
+    }
+
+    //-- Getter/Setter
+    public String getContentType ()
+    {
+        return _contentType;
+    }
+
+    public String getEncoding ()
+    {
+        return _encoding;
+    }
+}

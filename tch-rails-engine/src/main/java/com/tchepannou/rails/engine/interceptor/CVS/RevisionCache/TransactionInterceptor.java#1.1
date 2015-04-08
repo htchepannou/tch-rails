@@ -1,0 +1,160 @@
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
+
+package com.tchepannou.rails.engine.interceptor;
+
+import com.tchepannou.rails.core.annotation.RequireTransaction;
+import com.tchepannou.rails.core.api.ActionContext;
+import com.tchepannou.rails.core.api.ActionController;
+import com.tchepannou.rails.core.api.ActionInterceptor;
+import com.tchepannou.rails.core.api.Interceptor;
+import com.tchepannou.rails.core.api.JobContext;
+import com.tchepannou.rails.core.api.JobController;
+import com.tchepannou.rails.core.api.JobInterceptor;
+import com.tchepannou.rails.core.api.MessageContext;
+import com.tchepannou.rails.core.api.MessageController;
+import com.tchepannou.rails.core.api.MessageInterceptor;
+import com.tchepannou.rails.core.util.EntityTransactionThreadLocal;
+import java.io.IOException;
+import java.lang.reflect.Method;
+import javax.persistence.EntityTransaction;
+
+/**
+ * This is the interceptor that start/commit/rollback transaction.
+ * The interceptor will trigger the transaction if the ActionController or the
+ * action method has the annotation {@link RequireTransaction}
+ * 
+ * @author herve
+ */
+public class TransactionInterceptor
+    implements ActionInterceptor, JobInterceptor, MessageInterceptor
+{
+    //-- ActionInterceptor
+    @Override
+    public int before (Method method, ActionController controller)
+    {
+        begin (controller, method);
+        return ActionInterceptor.CONTINUE;
+    }
+
+    @Override
+    public void after (Method method, ActionController controller, Throwable e)
+    {
+        ActionContext context = controller.getActionContext ();
+        if (e == null && !context.isRollback ())
+        {
+            commit ();
+        }
+        else
+        {
+            rollback ();
+        }
+    }
+
+    public int before (ActionController controller)
+        throws IOException
+    {
+        return Interceptor.CONTINUE;
+    }
+
+    public void after (ActionController controller)
+        throws IOException
+    {
+    }
+
+    //-- JobInterceptor
+    @Override
+    public int before (JobController controller)
+    {
+        begin (controller);
+        return ActionInterceptor.CONTINUE;
+    }
+
+    @Override
+    public void after (JobController controller, Throwable e)
+    {
+        JobContext context = controller.getJobContext ();
+        if (e == null && !context.isRollback ())
+        {
+            commit ();
+        }
+        else
+        {
+            rollback ();
+        }
+    }
+
+
+    //-- MessageInterceptor
+    @Override
+    public int before (MessageController controller)
+    {
+        begin (controller);
+        return ActionInterceptor.CONTINUE;
+    }
+
+    @Override
+    public void after (MessageController controller, Throwable e)
+    {
+        MessageContext context = controller.getMessageContext ();
+        if (e == null && !context.isRollback ())
+        {
+            commit ();
+        }
+        else
+        {
+            rollback ();
+        }
+    }
+
+    //-- Private methods
+    private void begin (Object controller)
+    {
+        if (isTransactionRequired (controller))
+        {
+            EntityTransaction tx = EntityTransactionThreadLocal.getTransaction ();
+            tx.begin ();
+        }
+    }
+
+    private boolean isTransactionRequired (Object controller)
+    {
+        return controller.getClass ().getAnnotation (RequireTransaction.class) != null;
+    }
+
+    private void begin (Object controller, Method method)
+    {
+        if (isTransactionRequired (controller, method))
+        {
+            EntityTransaction tx = EntityTransactionThreadLocal.getTransaction ();
+            tx.begin ();
+        }
+    }
+
+    private void commit ()
+    {
+        EntityTransaction tx = EntityTransactionThreadLocal.getTransaction ();
+        if ( tx != null && tx.isActive () )
+        {
+            tx.commit ();
+        }
+    }
+
+    private void rollback ()
+    {
+        EntityTransaction tx = EntityTransactionThreadLocal.getTransaction ();
+        if ( tx != null && tx.isActive () )
+        {
+            tx.rollback ();
+        }
+    }
+
+    private boolean isTransactionRequired (Object controller, Method method)
+    {
+        return method.getAnnotation(RequireTransaction.class) != null
+            ? true
+            : controller.getClass ().getAnnotation (RequireTransaction.class) != null;
+    }
+}

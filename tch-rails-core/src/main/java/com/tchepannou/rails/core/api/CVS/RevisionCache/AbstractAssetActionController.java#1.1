@@ -1,0 +1,34 @@
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package com.tchepannou.rails.core.api;
+
+import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import org.apache.log4j.Logger;
+
+/**
+ * This controller handle all asset files
+ * 
+ * @author herve
+ */
+public abstract class AbstractAssetActionController
+    extends AbstractStaticActionController
+{
+    //-- Static Attribute
+    private static final Logger LOG = Logger.getLogger (AbstractAssetActionController.class);
+
+
+    //-- Public method
+    @Override
+    protected File getFile ()
+    {
+        String path    = getRequest ().getPathInfo ();
+        String xpath   = getActionContext ().getContainerContext ().getServletContext ().getRealPath (path);
+        String baseDir = getOptionService ().get (OptionService.OPTION_ASSET_UPLOAD_DIR, "");
+        return xpath != null ? new File (baseDir + xpath) : null;
+    }
+}

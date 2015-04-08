@@ -1,0 +1,260 @@
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
+package com.tchepannou.rails.engine.container;
+
+import com.tchepannou.rails.core.annotation.MessageSource;
+import com.tchepannou.rails.core.api.ContainerContext;
+import com.tchepannou.rails.core.api.MessageContext;
+import com.tchepannou.rails.core.api.MessageController;
+import com.tchepannou.rails.core.api.MessageInterceptor;
+import com.tchepannou.rails.core.api.MessagingService;
+import com.tchepannou.rails.core.exception.InitializationException;
+import java.util.List;
+import javax.jms.Connection;
+import javax.jms.ConnectionFactory;
+import javax.jms.Destination;
+import javax.jms.JMSException;
+import javax.jms.MessageConsumer;
+import javax.jms.MessageListener;
+import javax.jms.ObjectMessage;
+import javax.jms.Session;
+import org.apache.log4j.Logger;
+
+/**
+ *
+ * @author herve
+ */
+public class MessageControllerWrapper
+    implements MessageListener
+{
+    //-- Attribute
+    private static final Logger LOG = Logger.getLogger (MessageControllerWrapper.class);
+    //-- Attribute
+    private ContainerContext _containerContext;
+    private String _destinationName;
+    private MessageSource.Type _destinationType;
+    private Class<? extends MessageController> _controllerClass;
+    private boolean _rollback;
+    private Connection _connection;
+    private Session _session;
+    private Destination _destination;
+    private MessageConsumer _consumer;
+
+    //-- Public method
+    public void init (ContainerContext containerContext)
+    {
+        if ( LOG.isTraceEnabled () )
+        {
+            LOG.trace ("init(" + containerContext + ")");
+        }
+
+        try
+        {
+            _containerContext = containerContext;
+
+            MessagingService ms = getMessagingService ();
+            ConnectionFactory cf = ms.getConnectionFactory ();
+            _connection = cf.createConnection ();
+            _connection.start ();
+
+            _session = _connection.createSession (true, Session.SESSION_TRANSACTED);
+            _destination = _destinationType == MessageSource.Type.QUEUE
+                ? _session.createQueue (_destinationName)
+                : _session.createTopic (_destinationName);
+
+            _consumer = _session.createConsumer (_destination);
+            _consumer.setMessageListener (this);
+        }
+        catch ( JMSException e )
+        {
+            throw new InitializationException ("JMS Error", e);
+        }
+    }
+
+    public void destroy ()
+    {
+        if ( LOG.isTraceEnabled () )
+        {
+            LOG.trace ("destroy ()");
+        }
+        _containerContext = null;
+
+        try
+        {
+            _consumer.close ();
+            _session.close ();
+            _connection.close ();
+        }
+        catch ( JMSException e )
+        {
+            LOG.warn ("Unable to dispose JMS resources", e);
+        }
+    }
+
+    //-- MessageListener overrides
+    public void onMessage (javax.jms.Message msg)
+    {
+        if ( LOG.isTraceEnabled () )
+        {
+            LOG.trace ("onMessage(" + msg + ")");
+        }
+
+        /* Pre-interceptor */
+        MessageController controller = createMessagingController ();
+        int status = pre (controller);
+
+        /* Service */
+        try
+        {
+            if ( status != MessageInterceptor.STOP )
+            {
+                ObjectMessage omsg = ( ObjectMessage ) msg;
+                controller.onMessage (omsg.getObject ());
+                _session.commit ();
+            }
+        }
+        catch ( RuntimeException ex )
+        {
+            LOG.warn ("Unexcepted error while handing the message", ex);
+            try
+            {
+                _session.rollback ();
+            }
+            catch ( JMSException e )
+            {
+                LOG.trace ("Unable to rollback the session", ex);
+            }
+        }
+        catch (JMSException ex)
+        {
+            LOG.warn ("JMS error", ex);
+            throw new RuntimeException ("JMS error", ex);
+        }
+        finally
+        {
+            post();
+        }
+    }
+
+    private int pre (MessageController controller)
+    {
+        int status = MessageInterceptor.CONTINUE;
+        List<MessageInterceptor> interceptors = _containerContext.getMessageInterceptors ();
+        int size = interceptors.size ();
+        for ( int i = 0; i < size; i++ )
+        {
+            MessageInterceptor itc = interceptors.get (i);
+            status = itc.before (controller);
+            if ( status != MessageInterceptor.CONTINUE )
+            {
+                break;
+            }
+        }
+        return status;
+    }
+
+    private void post ()
+    {
+        MessageController controller = createMessagingController ();
+        List<MessageInterceptor> interceptors = _containerContext.getMessageInterceptors ();
+        int size = interceptors.size ();
+        for ( int i = size - 1; i >= 0; i-- )
+        {
+            MessageInterceptor itc = interceptors.get (i);
+            itc.after (controller, null);
+        }
+
+    }
+
+    //-- Object overrides
+    @Override
+    public String toString ()
+    {
+        return "MessageControllerWrapper{" + _controllerClass.getSimpleName () + "}";
+    }
+
+    //-- Private
+    private MessageController createMessagingController ()
+    {
+        Class<? extends MessageController> clazz = getControllerClass ();
+        try
+        {
+            MessageController controller = clazz.newInstance ();
+            MessageContext context = createMessagingContext ();
+            controller.setMessageContext (context);
+            return controller;
+        }
+        catch ( InstantiationException ex )
+        {
+            throw new com.tchepannou.rails.core.exception.InstantiationException ("Unable to instantiate " + clazz, ex);
+        }
+        catch ( IllegalAccessException ex )
+        {
+            throw new com.tchepannou.rails.core.exception.InstantiationException ("Unable to instantiate " + clazz, ex);
+        }
+    }
+
+    private MessageContext createMessagingContext ()
+    {
+        return new MessageContext ()
+        {
+            public ContainerContext getContainerContext ()
+            {
+                return _containerContext;
+            }
+
+            public boolean isRollback ()
+            {
+                return _rollback;
+            }
+
+            public void setRollback (boolean rollback)
+            {
+                _rollback = rollback;
+            }
+        };
+    }
+
+    private MessagingService getMessagingService ()
+    {
+        MessagingService ms = ( MessagingService ) _containerContext.findService (MessagingService.class);
+        if ( ms == null )
+        {
+            throw new IllegalStateException ("Service not found: " + MessagingService.class);
+        }
+        return ms;
+    }
+
+    //-- Getter/Setter
+    public String getDestinationName ()
+    {
+        return _destinationName;
+    }
+
+    public void setDestinationName (String destinationName)
+    {
+        this._destinationName = destinationName;
+    }
+
+    public Class<? extends MessageController> getControllerClass ()
+    {
+        return _controllerClass;
+    }
+
+    public void setControllerClass (Class<? extends MessageController> controllerClass)
+    {
+        this._controllerClass = controllerClass;
+    }
+
+    public MessageSource.Type getDestinationType ()
+    {
+        return _destinationType;
+    }
+
+    public void setDestinationType (MessageSource.Type destinationType)
+    {
+        this._destinationType = destinationType;
+    }
+}
